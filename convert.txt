@@ -1,0 +1,1 @@
+convert no_alpha.bmp -alpha set -define bmp:format=bmp4 with_alpha.bmp
