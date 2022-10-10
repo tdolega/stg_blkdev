@@ -116,17 +116,16 @@ uint pixelIdxToBmpIdx(struct Bmp *bmp, uint pixel) {
     return row * bmp->rowSize + col * COLORS_PER_PIXEL + bmp->headerSize;
 }
 
-void bEncode(const uint8 *data, uint size, uint position, struct Bmp *bmp) {
-    uint8 byte;
+void bEncode(const uint8 *data, uint size, loff_t position, struct Bmp *bmp) {
     uint byteIdx;
     uint pixelIdx;
-    uint8 twoBits;
-    uint8 color;
     uint8 colorIdx;
     for (byteIdx = 0; byteIdx < size; byteIdx++) {
-        byte = data[byteIdx];
+        uint8 byte = data[byteIdx];
         pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
         for (colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
+            uint8 color;
+            uint8 twoBits;
             bRead(&color, 1, pixelIdx + colorIdx, bmp);
             twoBits = (byte >> (colorIdx * 2)) & 0b11;
             color = (color & 0b11111100) | twoBits;
@@ -135,17 +134,16 @@ void bEncode(const uint8 *data, uint size, uint position, struct Bmp *bmp) {
     }
 }
 
-void bDecode(uint8 *data, uint size, uint position, struct Bmp *bmp) {
-    uint8 byte;
+void bDecode(uint8 *data, uint size, loff_t position, struct Bmp *bmp) {
     uint byteIdx;
     uint pixelIdx;
-    uint8 twoBits;
-    uint8 color;
     uint8 colorIdx;
     for (byteIdx = 0; byteIdx < size; byteIdx++) {
-        byte = 0;
+        uint8 byte = 0;
         pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
         for (colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
+            uint8 color;
+            uint8 twoBits;
             bRead(&color, 1, pixelIdx + colorIdx, bmp);
             twoBits = color & 0b00000011;
             byte |= twoBits << (colorIdx * 2);
@@ -154,56 +152,54 @@ void bDecode(uint8 *data, uint size, uint position, struct Bmp *bmp) {
     }
 }
 
-int bsEncode(const uint8 *data, uint size, uint position, struct BmpStorage *bmpS) {
+int bsEncode(const uint8 *data, uint size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
-    uint bmpPosition = position;
     
     if (position + size > bmpS->totalVirtualSize) {
         printInfo("ERROR: not enough space\n");
         return 1;
     }
 
-    while (bmpIdx < bmpS->count - 1 && bmpPosition >= bmpS->bmps[bmpIdx].virtualSize) {
-        bmpPosition -= bmpS->bmps[bmpIdx].virtualSize;
+    while (bmpIdx < bmpS->count - 1 && position >= bmpS->bmps[bmpIdx].virtualSize) {
+        position -= bmpS->bmps[bmpIdx].virtualSize;
         bmpIdx++;
     }
 
     while (size > 0) {
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
-        uint bmpSize = bmp->virtualSize - bmpPosition;
+        uint bmpSize = bmp->virtualSize - position;
         uint bytesToWrite = bmpSize < size ? bmpSize : size;
-        bEncode(data, bytesToWrite, bmpPosition, bmp);
+        bEncode(data, bytesToWrite, position, bmp);
         data += bytesToWrite;
         size -= bytesToWrite;
         bmpIdx++;
-        bmpPosition = 0;
+        position = 0;
     }
     return 0;
 }
 
-int bsDecode(uint8 *data, uint size, uint position, struct BmpStorage *bmpS) {
+int bsDecode(uint8 *data, uint size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
-    uint bmpPosition = position;
 
     if (position + size > bmpS->totalVirtualSize) {
         printInfo("ERROR: not enough space\n");
         return 1;
     }
 
-    while (bmpIdx < bmpS->count - 1 && bmpPosition >= bmpS->bmps[bmpIdx].virtualSize) {
-        bmpPosition -= bmpS->bmps[bmpIdx].virtualSize;
+    while (bmpIdx < bmpS->count - 1 && position >= bmpS->bmps[bmpIdx].virtualSize) {
+        position -= bmpS->bmps[bmpIdx].virtualSize;
         bmpIdx++;
     }
 
     while (size > 0) {
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
-        uint bmpSize = bmp->virtualSize - bmpPosition;
+        uint bmpSize = bmp->virtualSize - position;
         uint bytesToRead = bmpSize < size ? bmpSize : size;
-        bDecode(data, bytesToRead, bmpPosition, bmp);
+        bDecode(data, bytesToRead, position, bmp);
         data += bytesToRead;
         size -= bytesToRead;
         bmpIdx++;
-        bmpPosition = 0;
+        position = 0;
     }
     return 0;
 }

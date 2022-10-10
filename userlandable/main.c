@@ -1,21 +1,25 @@
 #include "main.h"
 
-#define TESTING_SIZE (73219 / 2)
+#define TESTING_SIZE (73219)
 
 int run(struct BmpStorage *bmpS) {
     uint8 randomData[TESTING_SIZE];
     uint8 readBuffer[TESTING_SIZE];
-    long long t0, t1, t2, t3, t4;
+    long long t0, t1;
     t0 = currentTimestamp();
     for (uint i = 0; i < TESTING_SIZE; i++) {
-        randomData[i] = (uint8) i / 10;
+        randomData[i] = (uint8) rand();
     }
-    t1 = currentTimestamp();
 
-    if (bsEncode(randomData, TESTING_SIZE, 0, bmpS)) return 1;
-    t2 = currentTimestamp();
-    if (bsDecode(readBuffer, TESTING_SIZE, 0, bmpS)) return 1;
-    t3 = currentTimestamp();
+//    if (bsEncode(randomData, TESTING_SIZE, 0, bmpS)) return 1;
+    if (bsEncode(randomData, 10000, 0, bmpS)) return 1;
+    if (bsEncode(randomData+1000, 5000, 1000, bmpS)) return 1;
+    if (bsEncode(randomData+10000, 60000, 10000, bmpS)) return 1;
+    if (bsEncode(randomData+70000, 73219-70000, 70000, bmpS)) return 1;
+
+//    if (bsDecode(readBuffer, TESTING_SIZE, 0, bmpS)) return 1;
+    if (bsDecode(readBuffer, 60000, 0, bmpS)) return 1;
+    if (bsDecode(readBuffer+73219-20000, 20000, 73219-20000, bmpS)) return 1;
 
     int bad = 0;
     for (uint i = 0; i < TESTING_SIZE; i++)
@@ -28,9 +32,9 @@ int run(struct BmpStorage *bmpS) {
         }
     if (bad) printf("\nBad: %d\n", bad);
     else printf("OK\n");
-    t4 = currentTimestamp();
+    t1 = currentTimestamp();
 
-    printf("Time: %lld ms, %lld ms, %lld ms, %lld ms\n", t1 - t0, t2 - t1, t3 - t2, t4 - t3);
+    printf("Time: %lld ms\n", t1 - t0);
 
     return bad;
 }
