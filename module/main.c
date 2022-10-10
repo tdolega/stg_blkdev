@@ -13,26 +13,28 @@
 
 #include <linux/workqueue.h>
 
+#include "stg.h"
+
 #ifndef SECTOR_SIZE
 #define SECTOR_SIZE 512
 #endif
 
 #define BLK_DEV_NAME "sbd"
 
-#define printInfo(...)  printk(KERN_INFO "stg_blkdev: " __VA_ARGS__)
-#define printError(...) printk(KERN_ERR  "stg_blkdev: " __VA_ARGS__)
-
 int err = 0;
 char* backingPath = NULL; // TODO: move to the struct?
 
+// char *filePaths[] = {"/tmp/bmps/1.bmp", "/tmp/bmps/3.bmp", "/tmp/bmps/2.bmp", "/tmp/bmps/32b_rgba.bmp"};
+char *filePaths[] = {"/tmp/bmps/32b_rgba.bmp"};
 // internal representation of our block device, can hold any useful data
 struct SteganographyBlockDevice {
     sector_t capacity;
-    u8 *data;   // data buffer to emulate real storage device
+    // u8 *data;   // data buffer to emulate real storage device
     struct blk_mq_tag_set tag_set;
     struct request_queue *queue;
     struct gendisk *gdisk;
-    struct file *fd;
+    // struct file *fd;
+    struct BmpStorage *bmpS;
 };
 // device instance
 static struct SteganographyBlockDevice *sbd = NULL;
@@ -99,10 +101,12 @@ static int doRequest(struct request *rq, unsigned int *nr_bytes) {
 
         if (rq_data_dir(rq) == WRITE) {
 //            memcpy(dev->data + pos, b_buf, b_len);
-            kernel_write(dev->fd, b_buf, b_len, &pos);
+            // kernel_write(dev->fd, b_buf, b_len, &pos);
+            bsEncode(b_buf, b_len, pos, dev->bmpS);
         } else {
 //            memcpy(b_buf, dev->data + pos, b_len);
-            kernel_read(dev->fd, b_buf, b_len, &pos);
+            // kernel_read(dev->fd, b_buf, b_len, &pos);
+            bsDecode(b_buf, b_len, pos, dev->bmpS);
         }
 
 //        pos += b_len;
@@ -182,22 +186,19 @@ static int __init sbdInit(void) {
         goto failedToRegister;
     }
 
-    sbd->fd = filp_open(backingPath, O_RDWR, 0644);
-    if(IS_ERR_OR_NULL(sbd->fd)) {
-        printError("Failed to open backingPath\n");
-        err = -1; // todo: diffrent error
-        goto failedToCreate;
-    }
-    // set capacity of the device
-    sbd->capacity = sbd->fd->f_inode->i_size;
-    sbd->capacity >>= 9;
+    // sbd->fd = filp_open(backingPath, O_RDWR, 0644);
+    // if(IS_ERR_OR_NULL(sbd->fd)) {
+    //     printError("Failed to open backingPath\n");
+    //     err = -1; // todo: different error
+    //     goto failedToCreate;
+    // }
 
     // allocate corresponding data buffer
-    sbd->data = vmalloc(sbd->capacity << 9);
-    if (sbd->data == NULL) {
-        printError("Failed to allocate device IO buffer\n");
-        goto failedToCreate;
-    }
+    // sbd->data = vmalloc(sbd->capacity << 9);
+    // if (sbd->data == NULL) {
+    //     printError("Failed to allocate device IO buffer\n");
+    //     goto failedToCreate;
+    // }
 
     // allocate queue
     if (blk_mq_alloc_sq_tag_set(&sbd->tag_set, &mqOps, 128, BLK_MQ_F_SHOULD_MERGE)) {
@@ -229,7 +230,28 @@ static int __init sbdInit(void) {
 
     printInfo("Adding disk %s\n", sbd->gdisk->disk_name);
 
+    // open backing files
+    sbd->bmpS = kmalloc(sizeof(struct BmpStorage), GFP_KERNEL);
+    if (sbd->bmpS == NULL) {
+        printError("Failed to allocate struct bmpS\n");
+        err = -ENOMEM;
+        goto failedToOpenBackingFiles;
+    }
+    sbd->bmpS->count = sizeof(filePaths) / sizeof(char *);
+    sbd->bmpS->bmps = kmalloc(sizeof(struct Bmp) * sbd->bmpS->count, GFP_KERNEL);
+    if (sbd->bmpS->bmps == NULL) {
+        printError("Failed to allocate bmps structs\n");
+        err = -ENOMEM;
+        goto failedToAllocateBmpsStructs;
+    }
+    if (openBmps(filePaths, sbd->bmpS)) {
+        printError("Failed to open backing files\n");
+        err = -1; // todo: different error
+        goto failedToOpenBmps;
+    }
+
     // set device capacity
+    sbd->capacity = sbd->bmpS->totalVirtualSize / SECTOR_SIZE;
     set_capacity(sbd->gdisk, sbd->capacity);
 
     // notify kernel about new disk device
@@ -241,13 +263,18 @@ static int __init sbdInit(void) {
     return 0;
 
 failedToAdd:
+    kfree(sbd->bmpS->bmps);
+failedToOpenBmps:
+failedToAllocateBmpsStructs:
+    kfree(sbd->bmpS);
+failedToOpenBackingFiles:
     blk_cleanup_disk(sbd->gdisk);
 failedToAllocateDisk:
     blk_mq_free_tag_set(&sbd->tag_set);
 failedToAllocateQueue:
-    vfree(sbd->data);
-failedToCreate:
-    kfree(sbd);
+    // vfree(sbd->data);
+// failedToCreate:
+    // kfree(sbd);
 failedToRegister:
     unregister_blkdev(devMajor, BLK_DEV_NAME);
     return err;
@@ -262,10 +289,11 @@ static void __exit sbdExit(void) {
         blk_cleanup_disk(sbd->gdisk);
     }
 
-    filp_close(sbd->fd, NULL);
+    // filp_close(sbd->fd, NULL);
 
     unregister_blkdev(devMajor, BLK_DEV_NAME);
-    vfree(sbd->data);
+    // vfree(sbd->data);
+    closeBmps(sbd->bmpS);
     kfree(sbd);
 }
 

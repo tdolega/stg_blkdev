@@ -1,11 +1,11 @@
 BINARY      := stg_blkdev
 KERNEL      := /lib/modules/$(shell uname -r)/build
 ARCH        := x86
-C_FLAGS     := -Wall
+C_FLAGS     := -Wall -O0 -march=znver2 -msoft-float -msse4
 KMOD_DIR    := $(shell pwd)
 TARGET_PATH := /lib/modules/$(shell uname -r)/kernel/drivers/block
 
-OBJECTS := main.o
+OBJECTS := main.o stg.o
 
 ccflags-y += $(C_FLAGS)
 
