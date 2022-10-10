@@ -215,7 +215,8 @@ static int __init sbdInit(void) {
     }
 
     // set all required flags and data
-    sbd->gdisk->flags = GENHD_FL_NO_PART;
+    // sbd->gdisk->flags = GENHD_FL_NO_PART;
+    sbd->gdisk->flags = GENHD_FL_NO_PART_SCAN;
     sbd->gdisk->major = devMajor;
     sbd->gdisk->minors = 1; // TODO: guessed number
     sbd->gdisk->first_minor = 0;
