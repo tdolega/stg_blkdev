@@ -8,6 +8,8 @@
 #include <linux/blk-mq.h>
 #include <linux/hdreg.h>
 
+#include <linux/mutex.h>
+
 #include <asm/uaccess.h>
 #include <linux/kernel.h>
 
@@ -34,6 +36,8 @@ struct Bmp {
 
     uint virtualSize;
     uint virtualOffset;
+
+    char** filesim;
 };
 
 struct BmpStorage {

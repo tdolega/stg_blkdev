@@ -269,6 +269,7 @@ failedToAllocateBmpsStructs:
     kfree(sbd->bmpS);
 failedToOpenBackingFiles:
     blk_cleanup_disk(sbd->gdisk);
+    // put_disk(sbd->gdisk);
 failedToAllocateDisk:
     blk_mq_free_tag_set(&sbd->tag_set);
 failedToAllocateQueue:
@@ -287,6 +288,7 @@ static void __exit sbdExit(void) {
     if (sbd->gdisk) {
         del_gendisk(sbd->gdisk);
         blk_cleanup_disk(sbd->gdisk);
+        // put_disk(sbd->gdisk);
     }
 
     // filp_close(sbd->fd, NULL);

@@ -1,11 +1,59 @@
 #include "stg.h"
 
+DEFINE_MUTEX(mutex);
+
 void bRead(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+    mutex_lock(&mutex);
     kernel_read(bmp->fd, buffer, size, &position);
+    mutex_unlock(&mutex);
 }
 
 void bWrite(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+    mutex_lock(&mutex);
     kernel_write(bmp->fd, buffer, size, &position);
+    mutex_unlock(&mutex);
+}
+
+void tRead(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+    // int i;
+    // mutex_lock(&mutex);
+    // // kernel_read(bmp->fd, buffer, size, &position);
+    // mutex_unlock(&mutex);
+    // return;
+    // if(size > 4) {
+    //     printError("size > 4\n");
+    //     return;
+    // }
+    // uint8 confirmBuffer[4];
+    // // memcpy(confirmBuffer, bmp->filesim + position, size);
+    // memcpy(buffer, bmp->filesim + position, size);
+    // // for(i = 0; i < size; i++) {
+    // //     if(buffer[i] != confirmBuffer[i]) {
+    // //         printError("bad data (%d), (%d)\n", buffer[i], confirmBuffer[i]);
+    // //     }
+    // // }
+}
+
+void tWrite(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+    // mutex_lock(&mutex);
+    // // kernel_write(bmp->fd, buffer, size, &position);
+    // mutex_unlock(&mutex);
+    // return;
+    // memcpy(bmp->filesim + position, buffer, size);
+}
+
+void fRead(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+    printInfo("1 read %d B at pos %d = %d\n", size, position, buffer);
+    // memcpy(buffer, &(bmp->filesim)[position], size);
+    char five = 5;
+    memcpy(buffer, &five, sizeof(char));
+    printInfo("2 read %d B at pos %d = %d\n", size, position, buffer);
+}
+
+void fWrite(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+    printInfo("1 write %d B at pos %d = %d\n", size, position, buffer);
+    memcpy(&(bmp->filesim)[position], buffer, size);
+    printInfo("2 write %d B at pos %d = %d\n", size, position, buffer);
 }
 
 int isFileBmp(struct Bmp *bmp) {
@@ -61,6 +109,8 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
     // memcpy(sortedFilePaths, filePaths, sizeof(char *) * bmpS->count);
     // qsort(sortedFilePaths, bmpS->count, sizeof(sortedFilePaths[0]), pstrcmp);
 
+    mutex_init(&mutex);
+
     bmpS->totalVirtualSize = 0;
     for (i = 0; i < bmpS->count; i++) {
         bmp = &bmpS->bmps[i];
@@ -77,6 +127,12 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         // bmp->size >>= 9;
         printInfo("file size: %d MiB\n", bmp->size / 1024 / 1024);
         // printInfo("file size: %.2f MiB\n", (float) bmp->size / 1024 / 1024);
+
+        bmp->filesim = vmalloc(bmp->size * 8);
+        if(bmp->filesim == NULL) {
+            printInfo("ERROR: failed to allocate memory for file simulation\n");
+            return 1;
+        }
 
         if (!isFileBmp(bmp)) {
             printInfo("file is not a bmp\n");
@@ -103,6 +159,7 @@ void closeBmps(struct BmpStorage *bmpS) {
     for (i = 0; i < bmpS->count; i++) {
         struct file *fd = bmpS->bmps[i].fd;
         if (fd) filp_close(fd, NULL);
+        if (bmpS->bmps[i].filesim) vfree(bmpS->bmps[i].filesim);
     }
     kfree(bmpS->bmps);
     kfree(bmpS);
@@ -118,33 +175,34 @@ uint pixelIdxToBmpIdx(struct Bmp *bmp, uint pixel) {
 
 void bEncode(const uint8 *data, uint size, loff_t position, struct Bmp *bmp) {
     uint byteIdx;
-    uint pixelIdx;
     uint8 colorIdx;
     for (byteIdx = 0; byteIdx < size; byteIdx++) {
         uint8 byte = data[byteIdx];
-        pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
+        uint pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
         for (colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
             uint8 color;
             uint8 twoBits;
-            bRead(&color, 1, pixelIdx + colorIdx, bmp);
+            // bRead(&color, 1, pixelIdx + colorIdx, bmp);
+            fRead(&color, 1, pixelIdx + colorIdx, bmp);
             twoBits = (byte >> (colorIdx * 2)) & 0b11;
             color = (color & 0b11111100) | twoBits;
-            bWrite(&color, 1, pixelIdx + colorIdx, bmp);
+            // bWrite(&color, 1, pixelIdx + colorIdx, bmp);
+            fWrite(&color, 1, pixelIdx + colorIdx, bmp);
         }
     }
 }
 
 void bDecode(uint8 *data, uint size, loff_t position, struct Bmp *bmp) {
     uint byteIdx;
-    uint pixelIdx;
     uint8 colorIdx;
     for (byteIdx = 0; byteIdx < size; byteIdx++) {
         uint8 byte = 0;
-        pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
+        uint pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
         for (colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
             uint8 color;
             uint8 twoBits;
-            bRead(&color, 1, pixelIdx + colorIdx, bmp);
+            // bRead(&color, 1, pixelIdx + colorIdx, bmp);
+            fRead(&color, 1, pixelIdx + colorIdx, bmp);
             twoBits = color & 0b00000011;
             byte |= twoBits << (colorIdx * 2);
         }
@@ -169,7 +227,8 @@ int bsEncode(const uint8 *data, uint size, loff_t position, struct BmpStorage *b
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
         uint bmpSize = bmp->virtualSize - position;
         uint bytesToWrite = bmpSize < size ? bmpSize : size;
-        bEncode(data, bytesToWrite, position, bmp);
+        // bEncode(data, bytesToWrite, position, bmp);
+        fWrite(data, bytesToWrite, position, bmp);
         data += bytesToWrite;
         size -= bytesToWrite;
         bmpIdx++;
@@ -195,7 +254,8 @@ int bsDecode(uint8 *data, uint size, loff_t position, struct BmpStorage *bmpS) {
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
         uint bmpSize = bmp->virtualSize - position;
         uint bytesToRead = bmpSize < size ? bmpSize : size;
-        bDecode(data, bytesToRead, position, bmp);
+        // bDecode(data, bytesToRead, position, bmp);
+        fRead(data, bytesToRead, position, bmp);
         data += bytesToRead;
         size -= bytesToRead;
         bmpIdx++;
