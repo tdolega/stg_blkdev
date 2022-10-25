@@ -1,24 +1,16 @@
 #include "stg.h"
 
-DEFINE_MUTEX(mutex);
-
 void bRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-    mutex_lock(&mutex);
     kernel_read(bmp->fd, buffer, size, &position);
-    mutex_unlock(&mutex);
 }
 
 void bWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-    mutex_lock(&mutex);
     kernel_write(bmp->fd, buffer, size, &position);
-    mutex_unlock(&mutex);
 }
 
 void tRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
     // int i;
-    // mutex_lock(&mutex);
     // // kernel_read(bmp->fd, buffer, size, &position);
-    // mutex_unlock(&mutex);
     // return;
     // if(size > 4) {
     //     printError("size > 4\n");
@@ -35,9 +27,7 @@ void tRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
 }
 
 void tWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-    // mutex_lock(&mutex);
     // // kernel_write(bmp->fd, buffer, size, &position);
-    // mutex_unlock(&mutex);
     // return;
     // memcpy(bmp->filesim + position, buffer, size);
 }
@@ -120,8 +110,6 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         return -ENOMEM;
     }
     return 0;
-
-    mutex_init(&mutex);
 
     bmpS->totalVirtualSize = 0;
     for (i = 0; i < bmpS->count; i++) {
