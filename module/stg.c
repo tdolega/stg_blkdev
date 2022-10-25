@@ -102,6 +102,8 @@ void fillBmpStruct(struct Bmp *bmp) {
     printInfo("header size: %d B\n", bmp->headerSize);
 }
 
+u8 *test_data = NULL;
+
 uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
     uint i;
     struct Bmp *bmp;
@@ -110,6 +112,14 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
     // char **sortedFilePaths = kmalloc(sizeof(char *) * bmpS->count, GFP_KERNEL);
     // memcpy(sortedFilePaths, filePaths, sizeof(char *) * bmpS->count);
     // qsort(sortedFilePaths, bmpS->count, sizeof(sortedFilePaths[0]), pstrcmp);
+
+    bmpS->totalVirtualSize = 100 * 1024 * 1024;
+    test_data = vmalloc(bmpS->totalVirtualSize );
+    if(test_data == NULL) {
+        printError("test_data == NULL\n");
+        return -ENOMEM;
+    }
+    return 0;
 
     mutex_init(&mutex);
 
@@ -160,13 +170,12 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
 
 void closeBmps(struct BmpStorage *bmpS) {
     uint i;
+    return; // deleteme
     for (i = 0; i < bmpS->count; i++) {
         struct file *fd = bmpS->bmps[i].fd;
         if (fd) filp_close(fd, NULL);
         if (bmpS->bmps[i].filesim) vfree(bmpS->bmps[i].filesim);
     }
-    kfree(bmpS->bmps);
-    kfree(bmpS);
 }
 
 ///////////////
@@ -216,6 +225,11 @@ void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
 
 int bsEncode(const void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
+
+    ///
+    memcpy(test_data + position, data, size);
+    return 0;
+    ///
     
     if (position + size > bmpS->totalVirtualSize) {
         printError("not enough space\n");
@@ -243,6 +257,11 @@ int bsEncode(const void *data, ulong size, loff_t position, struct BmpStorage *b
 
 int bsDecode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
+
+    ///
+    memcpy(data, test_data + position, size);
+    return 0;
+    ///
 
     if (position + size > bmpS->totalVirtualSize) {
         printError("not enough space\n");

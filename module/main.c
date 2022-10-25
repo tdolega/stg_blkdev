@@ -36,28 +36,26 @@ struct SteganographyBlockDevice {
 static struct SteganographyBlockDevice *sbd = NULL;
 static int devMajor = 0;
 
-//// block_device_operations
+//// block device operations
 
-static int blockdevOpen(struct block_device *bd, fmode_t mode) {
-   printInfo("blockdevOpen()\n");
+static int devOpen(struct block_device *bd, fmode_t mode) {
     return 0;
 }
 
-static void blockdevRelease(struct gendisk *gdisk, fmode_t mode) {
-   printInfo("blockdevRelease()\n");
+static void devRelease(struct gendisk *gdisk, fmode_t mode) {
+    return;
 }
 
-int blockdevIoctl(struct block_device *bd, fmode_t mode, unsigned cmd, unsigned long arg) {
-   printInfo("blockdevIoctl()\n");
+int devIoCtl(struct block_device *bd, fmode_t mode, unsigned cmd, unsigned long arg) {
     return -ENOTTY;
 }
 
 // set block device file I/O
 static struct block_device_operations bdOps = {
     .owner = THIS_MODULE,
-    .open = blockdevOpen,
-    .release = blockdevRelease,
-    .ioctl = blockdevIoctl
+    .open = devOpen,
+    .release = devRelease,
+    .ioctl = devIoCtl
 };
 
 //// worker
@@ -231,8 +229,7 @@ static int __init sbdInit(void) {
     // set device capacity
     sbd->capacity = sbd->bmpS->totalVirtualSize / SECTOR_SIZE;
     set_capacity(sbd->gdisk, sbd->capacity);
-    printInfo("sector size: %d\n", SECTOR_SIZE);
-    printInfo("capacity: %llu\n", sbd->capacity);
+    printInfo("sector size: %d B, capacity: %llu sectors = %u \n", SECTOR_SIZE, sbd->capacity, sbd->bmpS->totalVirtualSize);
 
     // notify kernel about new disk device
     if(( err = add_disk(sbd->gdisk) )) {
