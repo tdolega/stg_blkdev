@@ -97,7 +97,7 @@ void fillBmpStruct(struct Bmp *bmp) {
     fillBmpRowSize(bmp);
     printInfo("row size: %d B, row padding: %d B\n", bmp->rowSize, bmp->padding);
     fillCapacity(bmp);
-    // printInfo("virtual size: %.2f MiB\n", (float) bmp->virtualSize / 1024 / 1024);
+    printInfo("virtual size: %d.%.2d MiB\n", bmp->virtualSize / 1024 / 1024, (100 * bmp->virtualSize / 1024 / 1024) % 100);
     fillBmpHeaderSize(bmp);
     printInfo("header size: %d B\n", bmp->headerSize);
 }
@@ -136,9 +136,7 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
             return PTR_ERR(bmp->fd);
         }
         bmp->size = bmp->fd->f_inode->i_size;
-        // bmp->size >>= 9;
-        printInfo("file size: %ld MiB\n", bmp->size / 1024 / 1024);
-        // printInfo("file size: %.2f MiB\n", (float) bmp->size / 1024 / 1024);
+        printInfo("file size: %ld.%.2ld MiB\n", bmp->size / 1024 / 1024, (100 * bmp->size / 1024 / 1024) % 100);
 
         if (!isFileBmp(bmp)) {
             printInfo("file is not a bmp\n");
@@ -164,7 +162,7 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         printInfo("\n");
     }
     // kfree(sortedFilePaths);
-    // printInfo("total virtual size: %.2f MiB (%d B)\n\n", (float) bmpS->totalVirtualSize / 1024 / 1024, bmpS->totalVirtualSize);
+    printInfo("total virtual size: %d.%.2d MiB (%d B)\n\n", bmpS->totalVirtualSize / 1024 / 1024, (100 * bmpS->totalVirtualSize / 1024 / 1024) % 100, bmpS->totalVirtualSize);
     return 0;
 }
 

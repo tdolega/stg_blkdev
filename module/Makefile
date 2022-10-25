@@ -1,8 +1,7 @@
 BINARY      := stg_blkdev
 KERNEL      := /lib/modules/$(shell uname -r)/build
 ARCH        := x86
-C_FLAGS     := -Wall -O0 -msoft-float -msse4
-#  -march=znver2 -mtune=znver2
+C_FLAGS     := -Wall -O0
 KMOD_DIR    := $(shell pwd)
 TARGET_PATH := /lib/modules/$(shell uname -r)/kernel/drivers/block
 
