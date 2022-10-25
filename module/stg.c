@@ -87,7 +87,7 @@ void fillBmpStruct(struct Bmp *bmp) {
     fillBmpRowSize(bmp);
     printInfo("row size: %d B, row padding: %d B\n", bmp->rowSize, bmp->padding);
     fillCapacity(bmp);
-    printInfo("virtual size: %d.%.2d MiB\n", bmp->virtualSize / 1024 / 1024, (100 * bmp->virtualSize / 1024 / 1024) % 100);
+    printInfo("virtual size: %lu.%.2lu MiB\n", bmp->virtualSize / 1024 / 1024, (100 * bmp->virtualSize / 1024 / 1024) % 100);
     fillBmpHeaderSize(bmp);
     printInfo("header size: %d B\n", bmp->headerSize);
 }
@@ -102,14 +102,6 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
     // char **sortedFilePaths = kmalloc(sizeof(char *) * bmpS->count, GFP_KERNEL);
     // memcpy(sortedFilePaths, filePaths, sizeof(char *) * bmpS->count);
     // qsort(sortedFilePaths, bmpS->count, sizeof(sortedFilePaths[0]), pstrcmp);
-
-    bmpS->totalVirtualSize = 100 * 1024 * 1024;
-    test_data = vmalloc(bmpS->totalVirtualSize );
-    if(test_data == NULL) {
-        printError("test_data == NULL\n");
-        return -ENOMEM;
-    }
-    return 0;
 
     bmpS->totalVirtualSize = 0;
     for (i = 0; i < bmpS->count; i++) {
@@ -138,8 +130,9 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
 
         fillBmpStruct(bmp);
 
+        bmp->virtualSize = 100 * 1024 * 1024; // todo fixme
         bmp->filesim = vmalloc(bmp->virtualSize);
-        printInfo("vmalloc %d B\n", bmp->virtualSize);
+        printInfo("vmalloc %lu B\n", bmp->virtualSize);
         if(bmp->filesim == NULL) {
             printError("failed to allocate memory for file simulation\n");
             return -ENOMEM;
@@ -150,17 +143,17 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         printInfo("\n");
     }
     // kfree(sortedFilePaths);
-    printInfo("total virtual size: %d.%.2d MiB (%d B)\n\n", bmpS->totalVirtualSize / 1024 / 1024, (100 * bmpS->totalVirtualSize / 1024 / 1024) % 100, bmpS->totalVirtualSize);
+    printInfo("total virtual size: %lu.%.2lu MiB (%lu B)\n", bmpS->totalVirtualSize / 1024 / 1024, (100 * bmpS->totalVirtualSize / 1024 / 1024) % 100, bmpS->totalVirtualSize);
     return 0;
 }
 
 void closeBmps(struct BmpStorage *bmpS) {
     uint i;
-    return; // deleteme
     for (i = 0; i < bmpS->count; i++) {
         struct file *fd = bmpS->bmps[i].fd;
         if (fd) filp_close(fd, NULL);
-        if (bmpS->bmps[i].filesim) vfree(bmpS->bmps[i].filesim);
+        else printError("file descriptor is NULL\n");
+        vfree(bmpS->bmps[i].filesim);
     }
 }
 
@@ -211,15 +204,10 @@ void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
 
 int bsEncode(const void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
-
-    ///
-    memcpy(test_data + position, data, size);
-    return 0;
-    ///
     
     if (position + size > bmpS->totalVirtualSize) {
         printError("not enough space\n");
-        return 1;
+        return -ENOSPC;
     }
 
     while (bmpIdx < bmpS->count - 1 && position >= bmpS->bmps[bmpIdx].virtualSize) {
@@ -229,10 +217,11 @@ int bsEncode(const void *data, ulong size, loff_t position, struct BmpStorage *b
 
     while (size > 0) {
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
-        uint bmpSize = bmp->virtualSize - position;
-        uint bytesToWrite = bmpSize < size ? bmpSize : size;
+        ulong bmpSize = bmp->virtualSize - position;
+        ulong bytesToWrite = bmpSize < size ? bmpSize : size;
         // bEncode(data, bytesToWrite, position, bmp);
-        fWrite(data, bytesToWrite, position, bmp);
+        // fWrite(data, bytesToWrite, position, bmp);
+        memcpy(bmp->filesim + position, data, bytesToWrite);
         data += bytesToWrite;
         size -= bytesToWrite;
         bmpIdx++;
@@ -244,27 +233,23 @@ int bsEncode(const void *data, ulong size, loff_t position, struct BmpStorage *b
 int bsDecode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
 
-    ///
-    memcpy(data, test_data + position, size);
-    return 0;
-    ///
-
     if (position + size > bmpS->totalVirtualSize) {
         printError("not enough space\n");
-        return 1;
+        return -ENOSPC;
     }
 
-    // while (bmpIdx < bmpS->count - 1 && position >= bmpS->bmps[bmpIdx].virtualSize) {
-    //     position -= bmpS->bmps[bmpIdx].virtualSize;
-    //     bmpIdx++;
-    // }
+    while (bmpIdx < bmpS->count - 1 && position >= bmpS->bmps[bmpIdx].virtualSize) {
+        position -= bmpS->bmps[bmpIdx].virtualSize;
+        bmpIdx++;
+    }
 
     while (size > 0) {
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
-        uint bmpSize = bmp->virtualSize - position;
-        uint bytesToRead = bmpSize < size ? bmpSize : size;
+        ulong bmpSize = bmp->virtualSize - position;
+        ulong bytesToRead = bmpSize < size ? bmpSize : size;
         // bDecode(data, bytesToRead, position, bmp);
-        fRead(data, bytesToRead, position, bmp);
+        // fRead(data, bytesToRead, position, bmp);
+        memcpy(data, bmp->filesim + position, bytesToRead);
         data += bytesToRead;
         size -= bytesToRead;
         bmpIdx++;

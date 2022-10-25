@@ -35,8 +35,8 @@ struct Bmp {
     uint rowSize;
     uint padding;
 
-    uint virtualSize;
-    uint virtualOffset;
+    ulong virtualSize;
+    ulong virtualOffset;
 
     char** filesim;
 };
@@ -44,7 +44,7 @@ struct Bmp {
 struct BmpStorage {
     struct Bmp *bmps;
     uint count;
-    uint totalVirtualSize;
+    ulong totalVirtualSize;
 };
 
 /////

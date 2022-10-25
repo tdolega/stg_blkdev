@@ -229,7 +229,7 @@ static int __init sbdInit(void) {
     // set device capacity
     sbd->capacity = sbd->bmpS->totalVirtualSize / SECTOR_SIZE;
     set_capacity(sbd->gdisk, sbd->capacity);
-    printInfo("sector size: %d B, capacity: %llu sectors = %u \n", SECTOR_SIZE, sbd->capacity, sbd->bmpS->totalVirtualSize);
+    printInfo("sector size: %d B, capacity: %llu sectors = %lu B \n", SECTOR_SIZE, sbd->capacity, sbd->bmpS->totalVirtualSize);
 
     // notify kernel about new disk device
     if(( err = add_disk(sbd->gdisk) )) {
