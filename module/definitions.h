@@ -1,3 +1,5 @@
+//// block device
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -14,7 +16,24 @@
 #include <linux/kernel.h>
 
 #include <linux/workqueue.h>
-/// everything above is copied
+// todo: some may be unused now
+
+#ifndef SECTOR_SIZE
+#define SECTOR_SIZE 512
+#endif
+
+#define BLK_DEV_NAME "sbd"
+
+struct SteganographyBlockDevice {
+    int devMajor;
+    sector_t capacity;
+    struct blk_mq_tag_set tag_set;
+    struct request_queue *queue;
+    struct gendisk *gdisk;
+    struct BmpStorage *bmpS;
+};
+
+//// bmp
 
 #define uint8 unsigned char
 #define uint unsigned int
@@ -25,7 +44,7 @@
 
 struct Bmp {
     struct file *fd;
-    long size;
+    ulong size;
     char* path;
 
     uint width;
@@ -33,7 +52,7 @@ struct Bmp {
 
     uint headerSize;
     uint rowSize;
-    uint padding;
+    uint8 padding;
 
     ulong virtualSize;
     ulong virtualOffset;
@@ -47,20 +66,7 @@ struct BmpStorage {
     ulong totalVirtualSize;
 };
 
-/////
+///// macros
 
 #define printInfo(...)  printk(KERN_INFO "stg_blkdev: " __VA_ARGS__)
 #define printError(...) printk(KERN_ERR  "stg_blkdev: " __VA_ARGS__)
-
-/////
-
-#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
-#define BYTE_TO_BINARY(byte)  \
-  (byte & 0x80 ? '1' : '0'), \
-  (byte & 0x40 ? '1' : '0'), \
-  (byte & 0x20 ? '1' : '0'), \
-  (byte & 0x10 ? '1' : '0'), \
-  (byte & 0x08 ? '1' : '0'), \
-  (byte & 0x04 ? '1' : '0'), \
-  (byte & 0x02 ? '1' : '0'), \
-  (byte & 0x01 ? '1' : '0')

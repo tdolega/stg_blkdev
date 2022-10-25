@@ -1,40 +1,13 @@
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/slab.h>
-#include <linux/vmalloc.h>
-#include <linux/fs.h>
-#include <linux/blkdev.h>
-#include <linux/buffer_head.h>
-#include <linux/blk-mq.h>
-#include <linux/hdreg.h>
-
-#include <asm/uaccess.h>
-#include <linux/kernel.h>
-
-#include <linux/workqueue.h>
-
 #include "stg.h"
 
-#ifndef SECTOR_SIZE
-#define SECTOR_SIZE 512
-#endif
-
-#define BLK_DEV_NAME "sbd"
-
-char* backingPath = NULL;
+// todo: tmp paths here
 char *filePaths[] = {"/tmp/bmps/1.bmp", "/tmp/bmps/3.bmp", "/tmp/bmps/2.bmp", "/tmp/bmps/32b_rgba.bmp", "/tmp/bmps/bigga.bmp", "/tmp/bmps/bigga2.bmp", "/tmp/bmps/bigga3.bmp", "/tmp/bmps/bigga4.bmp"};
 // char *filePaths[] = {"/tmp/bmps/32b_rgba.bmp"};
-// internal representation of our block device, can hold any useful data
-struct SteganographyBlockDevice {
-    sector_t capacity;
-    struct blk_mq_tag_set tag_set;
-    struct request_queue *queue;
-    struct gendisk *gdisk;
-    struct BmpStorage *bmpS;
-};
+
+char* backingPath = NULL;
+
 // device instance
 static struct SteganographyBlockDevice *sbd = NULL;
-static int devMajor = 0;
 
 //// block device operations
 
@@ -159,14 +132,19 @@ static int __init sbdInit(void) {
         goto noBackingPath;
     }
 
-    // register new block device and get device major number
-    devMajor = register_blkdev(devMajor, BLK_DEV_NAME);
-
     sbd = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
     if (sbd == NULL) {
         printError("failed to allocate struct sbd\n");
         err = -ENOMEM;
         goto failedAllocSbd;
+    }
+
+    // register new block device and get device major number
+    sbd->devMajor = register_blkdev(0, BLK_DEV_NAME);
+    if(sbd->devMajor < 0) {
+        printError("failed to register block device\n");
+        err = sbd->devMajor;
+        goto failedRegisterBlkDev;
     }
 
     // allocate queue
@@ -186,7 +164,7 @@ static int __init sbdInit(void) {
 
     // set all required flags and data
     sbd->gdisk->flags = GENHD_FL_NO_PART;
-    sbd->gdisk->major = devMajor;
+    sbd->gdisk->major = sbd->devMajor; // todo: duplicates
     sbd->gdisk->minors = 1; // any number
     sbd->gdisk->first_minor = 0;
 
@@ -240,9 +218,10 @@ failedAllocBmpS:
 failedAllocGdisk:
     blk_mq_free_tag_set(&sbd->tag_set); // undo blk_mq_alloc_sq_tag_set
 failedAllocQueue:
+    unregister_blkdev(sbd->devMajor, BLK_DEV_NAME); // undo register_blkdev
+failedRegisterBlkDev:
     kfree(sbd); // undo kmalloc sbd
 failedAllocSbd:
-    unregister_blkdev(devMajor, BLK_DEV_NAME); // undo register_blkdev
 noBackingPath:
     printError("sbdInit() failed with error %d", err);
     return err;
@@ -257,8 +236,8 @@ static void __exit sbdExit(void) {
     kfree(sbd->bmpS);
     del_gendisk(sbd->gdisk);
     put_disk(sbd->gdisk);
+    unregister_blkdev(sbd->devMajor, BLK_DEV_NAME); // todo: maybe do it first to prevent new requests?
     kfree(sbd);
-    unregister_blkdev(devMajor, BLK_DEV_NAME); // todo: maybe do it first to prevent new requests?
 }
 
 module_init(sbdInit);
