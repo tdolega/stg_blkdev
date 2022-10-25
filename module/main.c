@@ -22,8 +22,8 @@
 #define BLK_DEV_NAME "sbd"
 
 char* backingPath = NULL;
-// char *filePaths[] = {"/tmp/bmps/1.bmp", "/tmp/bmps/3.bmp", "/tmp/bmps/2.bmp", "/tmp/bmps/32b_rgba.bmp"};
-char *filePaths[] = {"/tmp/bmps/32b_rgba.bmp"};
+char *filePaths[] = {"/tmp/bmps/1.bmp", "/tmp/bmps/3.bmp", "/tmp/bmps/2.bmp", "/tmp/bmps/32b_rgba.bmp", "/tmp/bmps/bigga.bmp", "/tmp/bmps/bigga2.bmp", "/tmp/bmps/bigga3.bmp", "/tmp/bmps/bigga4.bmp"};
+// char *filePaths[] = {"/tmp/bmps/32b_rgba.bmp"};
 // internal representation of our block device, can hold any useful data
 struct SteganographyBlockDevice {
     sector_t capacity;
@@ -193,7 +193,6 @@ static int __init sbdInit(void) {
     }
 
     // set all required flags and data
-    // sbd->gdisk->flags = GENHD_FL_NO_PART_SCAN; // used before kernel 6.0
     sbd->gdisk->flags = GENHD_FL_NO_PART;
     sbd->gdisk->major = devMajor;
     sbd->gdisk->minors = 1; // TODO: guessed number
@@ -246,7 +245,6 @@ failedOpenBmps:
 failedAllocBmps:
     kfree(sbd->bmpS); // undo kmalloc bmpS
 failedAllocBmpS:
-    // blk_cleanup_disk(sbd->gdisk); // used before kernel 6.0
     put_disk(sbd->gdisk); // undo blk_mq_alloc_disk
 failedAllocGdisk:
     blk_mq_free_tag_set(&sbd->tag_set); // undo blk_mq_alloc_sq_tag_set
