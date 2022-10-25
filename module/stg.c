@@ -123,7 +123,7 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         bmp->fd = filp_open(bmp->path, O_RDWR, 0644); // todo: is it r+b?
         if (IS_ERR_OR_NULL(bmp->fd)) {
             printError("failed to open file\n");
-            return 1;
+            return PTR_ERR(bmp->fd);
         }
         bmp->size = bmp->fd->f_inode->i_size;
         // bmp->size >>= 9;
@@ -132,12 +132,12 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
 
         if (!isFileBmp(bmp)) {
             printInfo("file is not a bmp\n");
-            return 1;
+            return -EINVAL;
         }
 
         if (getBmpColorDepth(bmp) != 32) {
             printError("only 32-bit ARGB bitmaps are supported\n");
-            return 1;
+            return -EINVAL;
         }
 
         fillBmpStruct(bmp);
@@ -146,7 +146,7 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         printInfo("vmalloc %d B\n", bmp->virtualSize);
         if(bmp->filesim == NULL) {
             printError("failed to allocate memory for file simulation\n");
-            return 1;
+            return -ENOMEM;
         }
 
         bmp->virtualOffset = bmpS->totalVirtualSize;
