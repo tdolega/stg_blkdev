@@ -100,16 +100,16 @@ static int doRequest(struct request *rq, unsigned int *nr_bytes) {
         }
 
         if (rq_data_dir(rq) == WRITE) {
-//            memcpy(dev->data + pos, b_buf, b_len);
+        //    memcpy(dev->data + pos, b_buf, b_len);
             // kernel_write(dev->fd, b_buf, b_len, &pos);
             bsEncode(b_buf, b_len, pos, dev->bmpS);
         } else {
-//            memcpy(b_buf, dev->data + pos, b_len);
+        //    memcpy(b_buf, dev->data + pos, b_len);
             // kernel_read(dev->fd, b_buf, b_len, &pos);
             bsDecode(b_buf, b_len, pos, dev->bmpS);
         }
 
-//        pos += b_len;
+       pos += b_len;
         *nr_bytes += b_len;
     }
 
@@ -193,13 +193,6 @@ static int __init sbdInit(void) {
     //     goto failedToCreate;
     // }
 
-    // allocate corresponding data buffer
-    // sbd->data = vmalloc(sbd->capacity << 9);
-    // if (sbd->data == NULL) {
-    //     printError("Failed to allocate device IO buffer\n");
-    //     goto failedToCreate;
-    // }
-
     // allocate queue
     if (blk_mq_alloc_sq_tag_set(&sbd->tag_set, &mqOps, 128, BLK_MQ_F_SHOULD_MERGE)) {
         printError("Failed to allocate device queue\n");
@@ -216,8 +209,8 @@ static int __init sbdInit(void) {
     }
 
     // set all required flags and data
-    // sbd->gdisk->flags = GENHD_FL_NO_PART;
-    sbd->gdisk->flags = GENHD_FL_NO_PART_SCAN;
+    sbd->gdisk->flags = GENHD_FL_NO_PART;
+    // sbd->gdisk->flags = GENHD_FL_NO_PART_SCAN;
     sbd->gdisk->major = devMajor;
     sbd->gdisk->minors = 1; // TODO: guessed number
     sbd->gdisk->first_minor = 0;
@@ -254,6 +247,13 @@ static int __init sbdInit(void) {
     sbd->capacity = sbd->bmpS->totalVirtualSize / SECTOR_SIZE;
     set_capacity(sbd->gdisk, sbd->capacity);
 
+    // allocate corresponding data buffer
+    // sbd->data = vmalloc(sbd->capacity << 9);
+    // if (sbd->data == NULL) {
+    //     printError("Failed to allocate device IO buffer\n");
+    //     goto failedToAdd;
+    // }
+
     // notify kernel about new disk device
     if(( err = add_disk(sbd->gdisk) )) {
         printError("Failed to add disk\n");
@@ -268,8 +268,8 @@ failedToOpenBmps:
 failedToAllocateBmpsStructs:
     kfree(sbd->bmpS);
 failedToOpenBackingFiles:
-    blk_cleanup_disk(sbd->gdisk);
-    // put_disk(sbd->gdisk);
+    // blk_cleanup_disk(sbd->gdisk);
+    put_disk(sbd->gdisk);
 failedToAllocateDisk:
     blk_mq_free_tag_set(&sbd->tag_set);
 failedToAllocateQueue:
@@ -278,6 +278,8 @@ failedToAllocateQueue:
     // kfree(sbd);
 failedToRegister:
     unregister_blkdev(devMajor, BLK_DEV_NAME);
+
+    printError("sbdInit() failed with error %d", err);
     return err;
 }
 
@@ -287,14 +289,15 @@ static void __exit sbdExit(void) {
 
     if (sbd->gdisk) {
         del_gendisk(sbd->gdisk);
-        blk_cleanup_disk(sbd->gdisk);
-        // put_disk(sbd->gdisk);
+        // blk_cleanup_disk(sbd->gdisk);
+        put_disk(sbd->gdisk);
     }
 
     // filp_close(sbd->fd, NULL);
 
     unregister_blkdev(devMajor, BLK_DEV_NAME);
-    // vfree(sbd->data);
+    // if(sbd->data)
+    //     vfree(sbd->data);
     closeBmps(sbd->bmpS);
     kfree(sbd);
 }

@@ -18,6 +18,7 @@
 
 #define uint8 unsigned char
 #define uint unsigned int
+#define ulong unsigned long
 
 #define COLORS_PER_PIXEL 4
 #define BMP_HEADER_SIZE 54

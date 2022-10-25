@@ -2,19 +2,19 @@
 
 DEFINE_MUTEX(mutex);
 
-void bRead(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+void bRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
     mutex_lock(&mutex);
     kernel_read(bmp->fd, buffer, size, &position);
     mutex_unlock(&mutex);
 }
 
-void bWrite(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+void bWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
     mutex_lock(&mutex);
     kernel_write(bmp->fd, buffer, size, &position);
     mutex_unlock(&mutex);
 }
 
-void tRead(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+void tRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
     // int i;
     // mutex_lock(&mutex);
     // // kernel_read(bmp->fd, buffer, size, &position);
@@ -34,7 +34,7 @@ void tRead(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
     // // }
 }
 
-void tWrite(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
+void tWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
     // mutex_lock(&mutex);
     // // kernel_write(bmp->fd, buffer, size, &position);
     // mutex_unlock(&mutex);
@@ -42,18 +42,20 @@ void tWrite(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
     // memcpy(bmp->filesim + position, buffer, size);
 }
 
-void fRead(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
-    printInfo("1 read %d B at pos %d = %d\n", size, position, buffer);
+void fRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
+    // printInfo("1 read %lu B at pos %lld = %d\n", size, position, (int) *buffer);
     // memcpy(buffer, &(bmp->filesim)[position], size);
-    char five = 5;
-    memcpy(buffer, &five, sizeof(char));
-    printInfo("2 read %d B at pos %d = %d\n", size, position, buffer);
+    memcpy(buffer, bmp->filesim + position, size);
+    // char five = 5;
+    // memcpy(&buffer, &five, sizeof(char));
+    // printInfo("2 read %lu B at pos %lld = %d\n", size, position, (int) *buffer);
 }
 
-void fWrite(uint8 *buffer, uint size, loff_t position, struct Bmp *bmp) {
-    printInfo("1 write %d B at pos %d = %d\n", size, position, buffer);
-    memcpy(&(bmp->filesim)[position], buffer, size);
-    printInfo("2 write %d B at pos %d = %d\n", size, position, buffer);
+void fWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
+    // printInfo("1 write %lu B at pos %lld = %d\n", size, position, buffer);
+    memcpy(bmp->filesim + position, buffer, size);
+    // memcpy(&(bmp->filesim)[position], buffer, size);
+    // printInfo("2 write %lu B at pos %lld = %d\n", size, position, buffer);
 }
 
 int isFileBmp(struct Bmp *bmp) {
@@ -120,19 +122,13 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         // bmp->file = fopen(bmp->path, "r+b");
         bmp->fd = filp_open(bmp->path, O_RDWR, 0644); // todo: is it r+b?
         if (IS_ERR_OR_NULL(bmp->fd)) {
-            printInfo("ERROR: failed to open file\n");
+            printError("failed to open file\n");
             return 1;
         }
         bmp->size = bmp->fd->f_inode->i_size;
         // bmp->size >>= 9;
-        printInfo("file size: %d MiB\n", bmp->size / 1024 / 1024);
+        printInfo("file size: %ld MiB\n", bmp->size / 1024 / 1024);
         // printInfo("file size: %.2f MiB\n", (float) bmp->size / 1024 / 1024);
-
-        bmp->filesim = vmalloc(bmp->size * 8);
-        if(bmp->filesim == NULL) {
-            printInfo("ERROR: failed to allocate memory for file simulation\n");
-            return 1;
-        }
 
         if (!isFileBmp(bmp)) {
             printInfo("file is not a bmp\n");
@@ -140,16 +136,24 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         }
 
         if (getBmpColorDepth(bmp) != 32) {
-            printInfo("ERROR: only 32-bit ARGB bitmaps are supported\n");
+            printError("only 32-bit ARGB bitmaps are supported\n");
             return 1;
         }
 
         fillBmpStruct(bmp);
+
+        bmp->filesim = vmalloc(bmp->virtualSize);
+        printInfo("vmalloc %d B\n", bmp->virtualSize);
+        if(bmp->filesim == NULL) {
+            printError("failed to allocate memory for file simulation\n");
+            return 1;
+        }
+
         bmp->virtualOffset = bmpS->totalVirtualSize;
         bmpS->totalVirtualSize += bmp->virtualSize;
         printInfo("\n");
     }
-    kfree(sortedFilePaths);
+    // kfree(sortedFilePaths);
     // printInfo("total virtual size: %.2f MiB (%d B)\n\n", (float) bmpS->totalVirtualSize / 1024 / 1024, bmpS->totalVirtualSize);
     return 0;
 }
@@ -173,7 +177,7 @@ uint pixelIdxToBmpIdx(struct Bmp *bmp, uint pixel) {
     return row * bmp->rowSize + col * COLORS_PER_PIXEL + bmp->headerSize;
 }
 
-void bEncode(const uint8 *data, uint size, loff_t position, struct Bmp *bmp) {
+void bEncode(const uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
     uint byteIdx;
     uint8 colorIdx;
     for (byteIdx = 0; byteIdx < size; byteIdx++) {
@@ -192,7 +196,7 @@ void bEncode(const uint8 *data, uint size, loff_t position, struct Bmp *bmp) {
     }
 }
 
-void bDecode(uint8 *data, uint size, loff_t position, struct Bmp *bmp) {
+void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
     uint byteIdx;
     uint8 colorIdx;
     for (byteIdx = 0; byteIdx < size; byteIdx++) {
@@ -210,11 +214,11 @@ void bDecode(uint8 *data, uint size, loff_t position, struct Bmp *bmp) {
     }
 }
 
-int bsEncode(const uint8 *data, uint size, loff_t position, struct BmpStorage *bmpS) {
+int bsEncode(const void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
     
     if (position + size > bmpS->totalVirtualSize) {
-        printInfo("ERROR: not enough space\n");
+        printError("not enough space\n");
         return 1;
     }
 
@@ -237,18 +241,18 @@ int bsEncode(const uint8 *data, uint size, loff_t position, struct BmpStorage *b
     return 0;
 }
 
-int bsDecode(uint8 *data, uint size, loff_t position, struct BmpStorage *bmpS) {
+int bsDecode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
 
     if (position + size > bmpS->totalVirtualSize) {
-        printInfo("ERROR: not enough space\n");
+        printError("not enough space\n");
         return 1;
     }
 
-    while (bmpIdx < bmpS->count - 1 && position >= bmpS->bmps[bmpIdx].virtualSize) {
-        position -= bmpS->bmps[bmpIdx].virtualSize;
-        bmpIdx++;
-    }
+    // while (bmpIdx < bmpS->count - 1 && position >= bmpS->bmps[bmpIdx].virtualSize) {
+    //     position -= bmpS->bmps[bmpIdx].virtualSize;
+    //     bmpIdx++;
+    // }
 
     while (size > 0) {
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
