@@ -16,18 +16,18 @@ void bWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
 //     memcpy(bmp->filesim + position, buffer, size);
 // }
 
-uint pixelIdxToBmpIdx(struct Bmp *bmp, uint pixel) {
+ulong pixelIdxToBmpIdx(struct Bmp *bmp, ulong pixel) {
     uint row = pixel / bmp->width;
     uint col = pixel % bmp->width;
-    return row * bmp->rowSize + col * COLORS_PER_PIXEL + bmp->headerSize;
+    return (ulong) row * bmp->rowSize + col * COLORS_PER_PIXEL + bmp->headerSize;
 }
 
 void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
-    uint byteIdx;
+    ulong byteIdx;
     uint8 colorIdx;
     for (byteIdx = 0; byteIdx < size; byteIdx++) {
         uint8 byte = 0;
-        uint pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
+        ulong pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
         for (colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
             uint8 color;
             uint8 twoBits;
@@ -40,11 +40,11 @@ void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
 }
 
 void bEncode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
-    uint byteIdx;
+    ulong byteIdx;
     uint8 colorIdx;
     for (byteIdx = 0; byteIdx < size; byteIdx++) {
         uint8 byte = data[byteIdx];
-        uint pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
+        ulong pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
         for (colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
             uint8 color;
             uint8 twoBits;
@@ -61,7 +61,7 @@ int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, v
     
     if (position + size > bmpS->totalVirtualSize) {
         printError("not enough space\n");
-        return -ENOSPC;
+        return -ENOSPC; // instead of erroring out, truncating size is also a possibility...
     }
 
     while (bmpIdx < bmpS->count - 1 && position >= bmpS->bmps[bmpIdx].virtualSize) {
@@ -139,11 +139,10 @@ void fillBmpStruct(struct Bmp *bmp) {
 uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
     uint i;
     struct Bmp *bmp = bmpS->bmps;
-
     bmpS->totalVirtualSize = 0;
     for (i = 0; i < bmpS->count; i++, bmp++) {
         bmp->path = filePaths[i];
-        printInfo(">>>> %s\n", bmp->path);
+        printInfo("===> %s\n", bmp->path);
 
         bmp->fd = filp_open(bmp->path, O_RDWR, 0644);
         if (IS_ERR_OR_NULL(bmp->fd)) {
@@ -174,8 +173,8 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
 
         bmp->virtualOffset = bmpS->totalVirtualSize;
         bmpS->totalVirtualSize += bmp->virtualSize;
-        printInfo("\n");
     }
+    printInfo("===<\n");
     printInfo("total virtual size: %lu.%.2lu MiB (%lu B)\n", bmpS->totalVirtualSize / 1024 / 1024, (100 * bmpS->totalVirtualSize / 1024 / 1024) % 100, bmpS->totalVirtualSize);
     return 0;
 }

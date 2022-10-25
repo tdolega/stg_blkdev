@@ -46,7 +46,7 @@ static void devRelease(struct gendisk *gdisk, fmode_t mode) {
     return;
 }
 
-int devIoCtl(struct block_device *bd, fmode_t mode, unsigned cmd, unsigned long arg) {
+int devIoCtl(struct block_device *bd, fmode_t mode, uint cmd, ulong arg) {
     return -ENOTTY;
 }
 
@@ -63,34 +63,27 @@ static struct block_device_operations bdOps = {
 struct SbdWorker {
     struct work_struct work;
     struct request *rq;
-    unsigned int rqIdx;
+    uint rqIdx;
 };
 
 #define wqSize 10000
-struct SbdWorker *wq[wqSize];
+struct SbdWorker *wq[wqSize]; // todo: use linked list, not this funny limited array
 int wqHead = 0;
 
 // serve requests
-static int doRequest(struct request *rq, unsigned int *nr_bytes) {
+static int doRequest(struct request *rq, ulong *nr_bytes) {
     int ret = 0;
     struct bio_vec bvec;
     struct req_iterator iter;
     struct SteganographyBlockDevice *dev = rq->q->queuedata;
     loff_t pos = blk_rq_pos(rq) << SECTOR_SHIFT;
-    loff_t dev_size = (loff_t)(dev->capacity << SECTOR_SHIFT);
 
     // iterate over all requests segments
     rq_for_each_segment(bvec, rq, iter) {
-        unsigned long b_len = bvec.bv_len;
+        ulong b_len = bvec.bv_len;
 
-        /* Get pointer to the data */
+        // get pointer to the data
         void* b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
-
-        // simple check that we are not out of device bounds. TODO: not needed anymore
-        if ((pos + b_len) > dev_size) {
-            b_len = (unsigned long)(dev_size - pos);
-            printError("request out of bounds");
-        }
 
         if (rq_data_dir(rq) == WRITE) {
             bsEncode(b_buf, b_len, pos, dev->bmpS);
@@ -98,7 +91,7 @@ static int doRequest(struct request *rq, unsigned int *nr_bytes) {
             bsDecode(b_buf, b_len, pos, dev->bmpS);
         }
 
-       pos += b_len;
+        pos += b_len;
         *nr_bytes += b_len;
     }
 
@@ -106,9 +99,9 @@ static int doRequest(struct request *rq, unsigned int *nr_bytes) {
 }
 
 
-static void thread_function(struct work_struct *work_arg){
+static void requestThread(struct work_struct *work_arg){
     struct SbdWorker *c_ptr = container_of(work_arg, struct SbdWorker, work);
-    unsigned int nr_bytes = 0; // todo: use it
+    ulong nr_bytes = 0; // todo: use it
 
     struct request *rq = c_ptr->rq;
     doRequest(rq, &nr_bytes);
@@ -129,7 +122,7 @@ static blk_status_t queueRq(struct blk_mq_hw_ctx *hctx, const struct blk_mq_queu
 
     blk_mq_start_request(rq);
 
-    INIT_WORK(&worker->work, thread_function);
+    INIT_WORK(&worker->work, requestThread);
     worker->rqIdx = wqHead;
     worker->rq = rq;
     schedule_work(&worker->work);
@@ -146,8 +139,7 @@ static blk_status_t queueRq(struct blk_mq_hw_ctx *hctx, const struct blk_mq_queu
 }
 
 static void completeRq(struct request *rq) {
-    // yolo
-    blk_mq_end_request(rq, BLK_STS_OK);
+    blk_mq_end_request(rq, BLK_STS_OK); // yolo
 }
 
 static struct blk_mq_ops mqOps = {
@@ -159,7 +151,7 @@ static struct blk_mq_ops mqOps = {
 
 static int __init sbdInit(void) {
     int err = 0;
-    printInfo("sbdInit()\n");
+    printInfo("sbd initialize\n");
 
     if(!backingPath) {
         printError("backingPath not provided\n");
@@ -195,7 +187,7 @@ static int __init sbdInit(void) {
     // set all required flags and data
     sbd->gdisk->flags = GENHD_FL_NO_PART;
     sbd->gdisk->major = devMajor;
-    sbd->gdisk->minors = 1; // TODO: guessed number
+    sbd->gdisk->minors = 1; // any number
     sbd->gdisk->first_minor = 0;
 
     sbd->gdisk->fops = &bdOps;
@@ -203,8 +195,7 @@ static int __init sbdInit(void) {
 
     // set device name as it will be represented in /dev
     strncpy(sbd->gdisk->disk_name, BLK_DEV_NAME + 0, 9);
-
-    printInfo("Adding disk %s\n", sbd->gdisk->disk_name);
+    printInfo("adding disk /dev/%s\n", sbd->gdisk->disk_name);
 
     // open backing files
     sbd->bmpS = kmalloc(sizeof(struct BmpStorage), GFP_KERNEL);
@@ -228,7 +219,7 @@ static int __init sbdInit(void) {
     // set device capacity
     sbd->capacity = sbd->bmpS->totalVirtualSize / SECTOR_SIZE;
     set_capacity(sbd->gdisk, sbd->capacity);
-    printInfo("sector size: %d B, capacity: %llu sectors = %lu B \n", SECTOR_SIZE, sbd->capacity, sbd->bmpS->totalVirtualSize);
+    printInfo("sector size: %d B * capacity: %llu sectors = %llu B \n", SECTOR_SIZE, sbd->capacity, sbd->capacity * SECTOR_SIZE);
 
     // notify kernel about new disk device
     if(( err = add_disk(sbd->gdisk) )) {
@@ -259,7 +250,7 @@ noBackingPath:
 
 // release disk and free memory
 static void __exit sbdExit(void) {
-    printInfo("sbdExit()\n");
+    printInfo("sbd destroy\n");
     // todo: cleanup queue?
     closeBmps(sbd->bmpS);
     kfree(sbd->bmpS->bmps);
