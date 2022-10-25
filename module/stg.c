@@ -8,44 +8,12 @@ void bWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
     kernel_write(bmp->fd, buffer, size, &position);
 }
 
-void tRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-    // int i;
-    // // kernel_read(bmp->fd, buffer, size, &position);
-    // return;
-    // if(size > 4) {
-    //     printError("size > 4\n");
-    //     return;
-    // }
-    // uint8 confirmBuffer[4];
-    // // memcpy(confirmBuffer, bmp->filesim + position, size);
-    // memcpy(buffer, bmp->filesim + position, size);
-    // // for(i = 0; i < size; i++) {
-    // //     if(buffer[i] != confirmBuffer[i]) {
-    // //         printError("bad data (%d), (%d)\n", buffer[i], confirmBuffer[i]);
-    // //     }
-    // // }
-}
-
-void tWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-    // // kernel_write(bmp->fd, buffer, size, &position);
-    // return;
-    // memcpy(bmp->filesim + position, buffer, size);
-}
-
 void fRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-    // printInfo("1 read %lu B at pos %lld = %d\n", size, position, (int) *buffer);
-    // memcpy(buffer, &(bmp->filesim)[position], size);
     memcpy(buffer, bmp->filesim + position, size);
-    // char five = 5;
-    // memcpy(&buffer, &five, sizeof(char));
-    // printInfo("2 read %lu B at pos %lld = %d\n", size, position, (int) *buffer);
 }
 
 void fWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-    // printInfo("1 write %lu B at pos %lld = %d\n", size, position, buffer);
     memcpy(bmp->filesim + position, buffer, size);
-    // memcpy(&(bmp->filesim)[position], buffer, size);
-    // printInfo("2 write %lu B at pos %lld = %d\n", size, position, buffer);
 }
 
 int isFileBmp(struct Bmp *bmp) {
@@ -109,8 +77,7 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
         bmp->path = sortedFilePaths[i];
         printInfo(">>>> %s\n", bmp->path);
 
-        // bmp->file = fopen(bmp->path, "r+b");
-        bmp->fd = filp_open(bmp->path, O_RDWR, 0644); // todo: is it r+b?
+        bmp->fd = filp_open(bmp->path, O_RDWR, 0644);
         if (IS_ERR_OR_NULL(bmp->fd)) {
             printError("failed to open file\n");
             return PTR_ERR(bmp->fd);
@@ -130,8 +97,7 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
 
         fillBmpStruct(bmp);
 
-        bmp->virtualSize = 100 * 1024 * 1024; // todo fixme
-        bmp->filesim = vmalloc(bmp->virtualSize);
+        bmp->filesim = vmalloc(bmp->size);
         printInfo("vmalloc %lu B\n", bmp->virtualSize);
         if(bmp->filesim == NULL) {
             printError("failed to allocate memory for file simulation\n");
@@ -157,8 +123,6 @@ void closeBmps(struct BmpStorage *bmpS) {
     }
 }
 
-///////////////
-
 uint pixelIdxToBmpIdx(struct Bmp *bmp, uint pixel) {
     uint row = pixel / bmp->width;
     uint col = pixel % bmp->width;
@@ -174,12 +138,12 @@ void bEncode(const uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
         for (colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
             uint8 color;
             uint8 twoBits;
-            // bRead(&color, 1, pixelIdx + colorIdx, bmp);
-            fRead(&color, 1, pixelIdx + colorIdx, bmp);
+            bRead(&color, 1, pixelIdx + colorIdx, bmp);
+            // fRead(&color, 1, pixelIdx + colorIdx, bmp);
             twoBits = (byte >> (colorIdx * 2)) & 0b11;
             color = (color & 0b11111100) | twoBits;
-            // bWrite(&color, 1, pixelIdx + colorIdx, bmp);
-            fWrite(&color, 1, pixelIdx + colorIdx, bmp);
+            bWrite(&color, 1, pixelIdx + colorIdx, bmp);
+            // fWrite(&color, 1, pixelIdx + colorIdx, bmp);
         }
     }
 }
@@ -193,8 +157,8 @@ void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
         for (colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
             uint8 color;
             uint8 twoBits;
-            // bRead(&color, 1, pixelIdx + colorIdx, bmp);
-            fRead(&color, 1, pixelIdx + colorIdx, bmp);
+            bRead(&color, 1, pixelIdx + colorIdx, bmp);
+            // fRead(&color, 1, pixelIdx + colorIdx, bmp);
             twoBits = color & 0b00000011;
             byte |= twoBits << (colorIdx * 2);
         }
@@ -219,9 +183,8 @@ int bsEncode(const void *data, ulong size, loff_t position, struct BmpStorage *b
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
         ulong bmpSize = bmp->virtualSize - position;
         ulong bytesToWrite = bmpSize < size ? bmpSize : size;
-        // bEncode(data, bytesToWrite, position, bmp);
         // fWrite(data, bytesToWrite, position, bmp);
-        memcpy(bmp->filesim + position, data, bytesToWrite);
+        bEncode(data, bytesToWrite, position, bmp);
         data += bytesToWrite;
         size -= bytesToWrite;
         bmpIdx++;
@@ -232,6 +195,7 @@ int bsEncode(const void *data, ulong size, loff_t position, struct BmpStorage *b
 
 int bsDecode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
     uint bmpIdx = 0;
+    printInfo("bsDecode: %lu B from %llu\n", size, position);
 
     if (position + size > bmpS->totalVirtualSize) {
         printError("not enough space\n");
@@ -247,9 +211,12 @@ int bsDecode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
         struct Bmp *bmp = &bmpS->bmps[bmpIdx];
         ulong bmpSize = bmp->virtualSize - position;
         ulong bytesToRead = bmpSize < size ? bmpSize : size;
-        // bDecode(data, bytesToRead, position, bmp);
+        printInfo("memcpy %lu B from %llu B\n", bytesToRead, position);
+        printInfo("bmpSize: %lu B, bmpIdx: %u, bmp->virtualSize: %lu B\n", bmpSize, bmpIdx, bmp->virtualSize);
+        printInfo("data: %p, bmp->filesim: %p, bmp->filesim + position: %p\n", data, bmp->filesim, bmp->filesim + position);
         // fRead(data, bytesToRead, position, bmp);
-        memcpy(data, bmp->filesim + position, bytesToRead);
+        bDecode(data, bytesToRead, position, bmp);
+        printInfo("memcpy done\n\n");
         data += bytesToRead;
         size -= bytesToRead;
         bmpIdx++;
