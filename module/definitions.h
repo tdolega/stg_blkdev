@@ -44,9 +44,15 @@ struct SteganographyBlockDevice {
     struct BmpStorage *bmpS;
 };
 
+struct SbdWorker {
+    struct work_struct work;
+    struct request *rq;
+};
+
 //// bmp
 
 #define COLORS_PER_PIXEL 4
+#define USED_BITS_PER_PIXEL 2
 #define BMP_HEADER_SIZE 54
 
 struct Bmp {

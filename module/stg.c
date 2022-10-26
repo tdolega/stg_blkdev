@@ -30,7 +30,7 @@ void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
             uint8 color, twoBits;
             bRead(&color, 1, pixelIdx + colorIdx, bmp);
             twoBits = color & 0b00000011;
-            byte |= twoBits << (colorIdx * 2);
+            byte |= twoBits << (colorIdx * USED_BITS_PER_PIXEL);
         }
         data[byteIdx] = byte;
     }
@@ -43,7 +43,7 @@ void bEncode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
         for (uint8 colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
             uint8 color, twoBits;
             bRead(&color, 1, pixelIdx + colorIdx, bmp);
-            twoBits = (byte >> (colorIdx * 2)) & 0b11;
+            twoBits = (byte >> (colorIdx * USED_BITS_PER_PIXEL)) & 0b11;
             color = (color & 0b11111100) | twoBits;
             bWrite(&color, 1, pixelIdx + colorIdx, bmp);
         }
@@ -55,7 +55,7 @@ int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, x
     
     if (position + size > bmpS->totalVirtualSize) {
         printError("not enough space\n");
-        return -ENOSPC; // instead of erroring out, truncating size is also a possibility...
+        return -ENOSPC; // instead of erroring out, truncating is also a possibility...
     }
 
     while (position >= bmp->virtualSize) {
@@ -112,7 +112,7 @@ void fillBmpStruct(struct Bmp *bmp) {
     printInfo("row size: %d B, row padding: %d B\n", bmp->rowSize, bmp->padding);
 
     // capacity
-    bmp->virtualSize = bmp->width * bmp->height * COLORS_PER_PIXEL * 2 / 8;
+    bmp->virtualSize = bmp->width * bmp->height * COLORS_PER_PIXEL * USED_BITS_PER_PIXEL / 8;
     printInfo("virtual size: %lu.%.2lu MiB\n", bmp->virtualSize / 1024 / 1024, (100 * bmp->virtualSize / 1024 / 1024) % 100);
 
     // header size
@@ -129,10 +129,19 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
 
     printInfo("===> %s\n", name);
     bmp = kmalloc(sizeof(struct Bmp), GFP_KERNEL);
+    if (bmp == NULL) {
+        printError("failed to allocate bmp struct\n");
+        return -ENOMEM;
+    }
     bmp->pnext = NULL;
 
-    fullPath = kmalloc(strlen(bmpS->backingPath) + namlen + 1, GFP_KERNEL);
+    fullPath = kmalloc(strlen(bmpS->backingPath) + 1 + namlen + 1, GFP_KERNEL);
+    if (fullPath == NULL) {
+        printError("failed to allocate fullPath string\n");
+        return -ENOMEM;
+    }
     strcpy(fullPath, bmpS->backingPath);
+    strcat(fullPath, "/");
     strcat(fullPath, name);
     bmp->fd = filp_open(fullPath, O_RDWR, 0644);
     kfree(fullPath);
@@ -183,7 +192,7 @@ int openBmps(struct BmpStorage *bmpS) {
     bmpS->totalVirtualSize = 0;
 
     if (( err = readdir(bmpS->backingPath, handleFile, (void*)bmpS) )) {
-        printError("cannot read directory %s\n", bmpS->backingPath);
+        printError("failed to read directory %s\n", bmpS->backingPath);
         closeBmps(bmpS);
         return err;
     }
@@ -198,7 +207,6 @@ void closeBmps(struct BmpStorage *bmpS) {
     struct Bmp *nextBmp;
     while (bmp != NULL) {
         if (bmp->fd) filp_close(bmp->fd, NULL);
-        else printError("file descriptor is NULL\n");
         // vfree(bmp->filesim);
 
         nextBmp = bmp->pnext;

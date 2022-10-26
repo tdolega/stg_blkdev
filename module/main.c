@@ -29,11 +29,6 @@ static struct block_device_operations bdOps = {
 
 //// worker
 
-struct SbdWorker {
-    struct work_struct work;
-    struct request *rq;
-};
-
 // serve requests
 static int requestHandler(struct request *rq, ulong *nrBytes) {
     int err = 0;
@@ -80,7 +75,7 @@ static blk_status_t queueRq(struct blk_mq_hw_ctx *hctx, const struct blk_mq_queu
     struct request *rq = bd->rq;
     struct SbdWorker *worker = kmalloc(sizeof(struct SbdWorker), GFP_KERNEL);
     if (worker == NULL) {
-        printError("cannot allocate worker");
+        printError("failed to allocate worker struct");
         return -ENOMEM;
     }
 
@@ -115,7 +110,7 @@ static int __init sbdInit(void) {
 
     sbd = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
     if (sbd == NULL) {
-        printError("failed to allocate struct sbd\n");
+        printError("failed to allocate sbd struct\n");
         err = -ENOMEM;
         goto failedAllocSbd;
     }
@@ -135,7 +130,7 @@ static int __init sbdInit(void) {
         goto failedAllocQueue;
     }
 
-    // allocate disk (?)
+    // allocate gdisk
     sbd->gdisk = blk_mq_alloc_disk(&sbd->tag_set, sbd);
     if (sbd->gdisk == NULL) {
         printError("failed to allocate gdisk\n");
@@ -159,7 +154,7 @@ static int __init sbdInit(void) {
     // open backing files
     sbd->bmpS = kmalloc(sizeof(struct BmpStorage), GFP_KERNEL);
     if (sbd->bmpS == NULL) {
-        printError("failed to allocate struct sbd->bmpS\n");
+        printError("failed to allocate sbd->bmpS struct\n");
         err = -ENOMEM;
         goto failedAllocBmpS;
     }
@@ -201,7 +196,6 @@ failedAllocQueue:
 failedRegisterBlkDev:
     kfree(sbd); // undo kmalloc sbd
 failedAllocSbd:
-// failedReadBackingPath:
 noBackingPath:
     printError("sbdInit() failed with error %d", err);
     return err;
@@ -212,7 +206,6 @@ static void __exit sbdExit(void) {
     printInfo("!!! sbd destroy\n");
     // todo: cleanup queue?
     closeBmps(sbd->bmpS);
-    // todo delete bmps
     kfree(sbd->bmpS);
     del_gendisk(sbd->gdisk);
     put_disk(sbd->gdisk);
