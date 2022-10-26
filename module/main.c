@@ -36,16 +36,11 @@ static struct block_device_operations bdOps = {
 struct SbdWorker {
     struct work_struct work;
     struct request *rq;
-    uint rqIdx;
 };
 
-#define wqSize 10000
-struct SbdWorker *wq[wqSize]; // todo: use linked list, not this funny limited array
-int wqHead = 0;
-
 // serve requests
-static int doRequest(struct request *rq, ulong *nr_bytes) {
-    int ret = 0;
+static int requestHandler(struct request *rq, ulong *nrBytes) {
+    int err = 0;
     struct bio_vec bvec;
     struct req_iterator iter;
     struct SteganographyBlockDevice *dev = rq->q->queuedata;
@@ -53,33 +48,35 @@ static int doRequest(struct request *rq, ulong *nr_bytes) {
 
     // iterate over all requests segments
     rq_for_each_segment(bvec, rq, iter) {
-        ulong b_len = bvec.bv_len;
-
         // get pointer to the data
-        void* b_buf = page_address(bvec.bv_page) + bvec.bv_offset;
+        void* bBuf = page_address(bvec.bv_page) + bvec.bv_offset;
+        ulong bLen = bvec.bv_len;
 
-        if (rq_data_dir(rq) == WRITE) {
-            bsEncode(b_buf, b_len, pos, dev->bmpS);
-        } else {
-            bsDecode(b_buf, b_len, pos, dev->bmpS);
-        }
+        if (rq_data_dir(rq) == WRITE)
+            err = bsEncode(bBuf, bLen, pos, dev->bmpS);
+        else
+            err = bsDecode(bBuf, bLen, pos, dev->bmpS);
+        
+        if (err)
+            return err;
 
-        pos += b_len;
-        *nr_bytes += b_len;
+        pos += bLen;
+        *nrBytes += bLen;
     }
 
-    return ret; // todo: ret is ignored right now
+    return err;
 }
 
 
-static void requestThread(struct work_struct *work_arg){
-    struct SbdWorker *c_ptr = container_of(work_arg, struct SbdWorker, work);
-    ulong nr_bytes = 0; // todo: use it
-
-    struct request *rq = c_ptr->rq;
-    doRequest(rq, &nr_bytes);
+static void requestHandlerThread(struct work_struct *work_arg){
+    struct SbdWorker *worker = container_of(work_arg, struct SbdWorker, work);
+    struct request *rq = worker->rq;
+    ulong nrBytes = 0; // todo: use it
+    requestHandler(rq, &nrBytes); // todo: handle return value
 
     blk_mq_complete_request(rq);
+
+    kfree(worker);
 }
 
 //// blk_mq_ops
@@ -87,26 +84,15 @@ static void requestThread(struct work_struct *work_arg){
 static blk_status_t queueRq(struct blk_mq_hw_ctx *hctx, const struct blk_mq_queue_data* bd) {
     struct request *rq = bd->rq;
     struct SbdWorker *worker = kmalloc(sizeof(struct SbdWorker), GFP_KERNEL);
-
-    if(worker == NULL) {
+    if (worker == NULL) {
         printError("cannot allocate worker");
         return -ENOMEM;
     }
 
     blk_mq_start_request(rq);
-
-    INIT_WORK(&worker->work, requestThread);
-    worker->rqIdx = wqHead;
     worker->rq = rq;
+    INIT_WORK(&worker->work, requestHandlerThread);
     schedule_work(&worker->work);
-
-    wq[wqHead] = worker;
-
-    wqHead++;
-    if(wqHead >= wqSize) {
-        wqHead = 0;
-        printError("wq looped\n");
-    }
 
     return BLK_STS_OK;
 }
@@ -126,7 +112,7 @@ static int __init sbdInit(void) {
     int err = 0;
     printInfo("sbd initialize\n");
 
-    if(!backingPath) {
+    if (!backingPath) {
         printError("backingPath not provided\n");
         err = -ENOENT;
         goto noBackingPath;
@@ -141,7 +127,7 @@ static int __init sbdInit(void) {
 
     // register new block device and get device major number
     sbd->devMajor = register_blkdev(0, BLK_DEV_NAME);
-    if(sbd->devMajor < 0) {
+    if (sbd->devMajor < 0) {
         printError("failed to register block device\n");
         err = sbd->devMajor;
         goto failedRegisterBlkDev;
@@ -156,7 +142,7 @@ static int __init sbdInit(void) {
 
     // allocate disk (?)
     sbd->gdisk = blk_mq_alloc_disk(&sbd->tag_set, sbd);
-    if(sbd->gdisk == NULL) {
+    if (sbd->gdisk == NULL) {
         printError("failed to allocate gdisk\n");
         err = -ENOMEM;
         goto failedAllocGdisk;
