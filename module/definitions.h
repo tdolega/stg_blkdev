@@ -1,20 +1,6 @@
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/slab.h>
-#include <linux/vmalloc.h>
 #include <linux/fs.h>
-#include <linux/blkdev.h>
-#include <linux/buffer_head.h>
 #include <linux/blk-mq.h>
-#include <linux/hdreg.h>
-
-#include <linux/mutex.h>
-
-#include <asm/uaccess.h>
-#include <linux/kernel.h>
-
-#include <linux/workqueue.h>
-// todo: some may be unused now
+// #include <linux/vmalloc.h>
 
 //// types
 
