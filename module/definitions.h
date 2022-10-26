@@ -1,5 +1,3 @@
-//// block device
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -18,6 +16,29 @@
 #include <linux/workqueue.h>
 // todo: some may be unused now
 
+//// types
+
+#define uint8 unsigned char
+#define uint unsigned int
+#define ulong unsigned long
+
+//// macros
+
+#define printInfo(...)  printk(KERN_INFO "stg_blkdev: " __VA_ARGS__)
+#define printError(...) printk(KERN_ERR  "stg_blkdev: " __VA_ARGS__)
+
+//// iterate directory
+
+typedef int (*readdir_t)(void *, const char *, int, loff_t, u64, uint);
+
+struct callback_context {
+    struct dir_context ctx;
+    readdir_t filler;
+    void* context;
+};
+
+//// block device
+
 #ifndef SECTOR_SIZE
 #define SECTOR_SIZE 512
 #endif
@@ -34,10 +55,6 @@ struct SteganographyBlockDevice {
 };
 
 //// bmp
-
-#define uint8 unsigned char
-#define uint unsigned int
-#define ulong unsigned long
 
 #define COLORS_PER_PIXEL 4
 #define BMP_HEADER_SIZE 54
@@ -58,15 +75,11 @@ struct Bmp {
     ulong virtualOffset;
 
     void* filesim;
+
+    struct Bmp* pnext;
 };
 
 struct BmpStorage {
     struct Bmp *bmps;
-    uint count;
     ulong totalVirtualSize;
 };
-
-///// macros
-
-#define printInfo(...)  printk(KERN_INFO "stg_blkdev: " __VA_ARGS__)
-#define printError(...) printk(KERN_ERR  "stg_blkdev: " __VA_ARGS__)

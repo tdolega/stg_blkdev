@@ -9,6 +9,39 @@ char* backingPath = NULL;
 // device instance
 static struct SteganographyBlockDevice *sbd = NULL;
 
+//// iterate directory
+
+int iterate_dir_callback(struct dir_context *ctx, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
+    struct callback_context *buf = container_of(ctx, struct callback_context, ctx);
+    return buf->filler(buf->context, name, namlen, offset, ino, d_type);
+}
+
+int readdir(const char* path, readdir_t filler, void* context) {
+    int err;
+    struct callback_context buf = {
+        .ctx.actor = (filldir_t) iterate_dir_callback,
+        .context = context,
+        .filler = filler
+    };
+
+    struct file* dir = filp_open(path, O_DIRECTORY, S_IRWXU | S_IRWXG | S_IRWXO);
+    if(IS_ERR(dir)) return PTR_ERR(dir);
+
+    err = iterate_dir(dir, &buf.ctx);
+    filp_close(dir, NULL);
+    return err;
+}
+
+//
+
+int fileCallback(void* data, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
+    if(d_type != DT_REG) return 0;
+
+    printInfo("file: %.*s\n", namlen, name);
+
+    return 0;
+}
+
 //// block device operations
 
 static int devOpen(struct block_device *bd, fmode_t mode) {
@@ -57,8 +90,7 @@ static int requestHandler(struct request *rq, ulong *nrBytes) {
         else
             err = bsDecode(bBuf, bLen, pos, dev->bmpS);
         
-        if (err)
-            return err;
+        if (err) return err;
 
         pos += bLen;
         *nrBytes += bLen;
@@ -118,6 +150,13 @@ static int __init sbdInit(void) {
         goto noBackingPath;
     }
 
+    // if (( err = readdir(backingPath, fileCallback, (void*)0) )) {
+    //     printError("cannot read directory %s\n", backingPath);
+    //     goto failedReadBackingPath;
+    // }
+
+    // return -1; // tmp
+
     sbd = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
     if (sbd == NULL) {
         printError("failed to allocate struct sbd\n");
@@ -168,14 +207,7 @@ static int __init sbdInit(void) {
         err = -ENOMEM;
         goto failedAllocBmpS;
     }
-    sbd->bmpS->count = sizeof(filePaths) / sizeof(char *);
-    sbd->bmpS->bmps = kmalloc(sizeof(struct Bmp) * sbd->bmpS->count, GFP_KERNEL);
-    if (sbd->bmpS->bmps == NULL) {
-        printError("failed to allocate structs sbd->bmpS->bmps\n");
-        err = -ENOMEM;
-        goto failedAllocBmps;
-    }
-    if (( err = openBmps(filePaths, sbd->bmpS) )) {
+    if (( err = openBmps(filePaths, sizeof(filePaths) / sizeof(char *), sbd->bmpS) )) {
         printError("failed to open backing files\n");
         goto failedOpenBmps;
     }
@@ -196,8 +228,6 @@ static int __init sbdInit(void) {
 failedToAdd:
     closeBmps(sbd->bmpS); // undo openBmps
 failedOpenBmps:
-    kfree(sbd->bmpS->bmps); // undo kmalloc bmps
-failedAllocBmps:
     kfree(sbd->bmpS); // undo kmalloc bmpS
 failedAllocBmpS:
     put_disk(sbd->gdisk); // undo blk_mq_alloc_disk
@@ -208,6 +238,7 @@ failedAllocQueue:
 failedRegisterBlkDev:
     kfree(sbd); // undo kmalloc sbd
 failedAllocSbd:
+// failedReadBackingPath:
 noBackingPath:
     printError("sbdInit() failed with error %d", err);
     return err;
@@ -218,7 +249,7 @@ static void __exit sbdExit(void) {
     printInfo("sbd destroy\n");
     // todo: cleanup queue?
     closeBmps(sbd->bmpS);
-    kfree(sbd->bmpS->bmps);
+    // todo delete bmps
     kfree(sbd->bmpS);
     del_gendisk(sbd->gdisk);
     put_disk(sbd->gdisk);

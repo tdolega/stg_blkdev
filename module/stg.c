@@ -50,7 +50,7 @@ void bEncode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
     }
 }
 
-int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, void(*xncoder)(uint8 *, ulong, loff_t, struct Bmp *)) {
+int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, xncoder_t xncoder) {
     struct Bmp *bmp = bmpS->bmps;
     
     if (position + size > bmpS->totalVirtualSize) {
@@ -60,7 +60,7 @@ int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, v
 
     while (position >= bmp->virtualSize) {
         position -= bmp->virtualSize;
-        bmp++;
+        bmp = bmp->pnext;
     }
 
     while (size > 0) {
@@ -71,7 +71,7 @@ int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, v
 
         data += bytesToXncode;
         size -= bytesToXncode;
-        bmp++;
+        bmp = bmp->pnext;
         position = 0;
     }
     return 0;
@@ -120,10 +120,11 @@ void fillBmpStruct(struct Bmp *bmp) {
     printInfo("header size: %d B\n", bmp->headerSize);
 }
 
-uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
-    struct Bmp *bmp = bmpS->bmps;
+uint openBmps(char **filePaths, uint nrFiles, struct BmpStorage *bmpS) {
     bmpS->totalVirtualSize = 0;
-    for (uint i = 0; i < bmpS->count; i++, bmp++) {
+    for (uint i = 0; i < nrFiles; i++) {
+        struct Bmp *bmp = kmalloc(sizeof(struct Bmp), GFP_KERNEL);
+        bmp->pnext = NULL;
         bmp->path = filePaths[i];
         printInfo("===> %s\n", bmp->path);
 
@@ -156,6 +157,16 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
 
         bmp->virtualOffset = bmpS->totalVirtualSize;
         bmpS->totalVirtualSize += bmp->virtualSize;
+
+        // add to list
+        if (bmpS->bmps == NULL) {
+            bmpS->bmps = bmp;
+        } else {
+            struct Bmp *last = bmpS->bmps;
+            while (last->pnext != NULL)
+                last = last->pnext;
+            last->pnext = bmp;
+        }
     }
     printInfo("===<\n");
     printInfo("total virtual size: %lu.%.2lu MiB (%lu B)\n", bmpS->totalVirtualSize / 1024 / 1024, (100 * bmpS->totalVirtualSize / 1024 / 1024) % 100, bmpS->totalVirtualSize);
@@ -164,9 +175,14 @@ uint openBmps(char **filePaths, struct BmpStorage *bmpS) {
 
 void closeBmps(struct BmpStorage *bmpS) {
     struct Bmp *bmp = bmpS->bmps;
-    for (uint i = 0; i < bmpS->count; i++, bmp++) {
+    struct Bmp *nextBmp;
+    while (bmp != NULL) {
         if (bmp->fd) filp_close(bmp->fd, NULL);
         else printError("file descriptor is NULL\n");
         // vfree(bmp->filesim);
+
+        nextBmp = bmp->pnext;
+        kfree(bmp);
+        bmp = nextBmp;
     }
 }
