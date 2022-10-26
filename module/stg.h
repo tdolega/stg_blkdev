@@ -1,6 +1,7 @@
 #include "definitions.h"
+#include "diriter.h"
 
-uint openBmps(char **filePaths, uint nrFiles, struct BmpStorage *bmpS);
+int openBmps(struct BmpStorage *bmpS);
 void closeBmps(struct BmpStorage *bmpS);
 
 typedef void(*xncoder_t)(uint8 *, ulong, loff_t, struct Bmp *);

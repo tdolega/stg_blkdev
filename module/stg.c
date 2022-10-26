@@ -120,57 +120,77 @@ void fillBmpStruct(struct Bmp *bmp) {
     printInfo("header size: %d B\n", bmp->headerSize);
 }
 
-uint openBmps(char **filePaths, uint nrFiles, struct BmpStorage *bmpS) {
+int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
+    struct BmpStorage *bmpS = (struct BmpStorage *) data;
+    struct Bmp *bmp;
+    char* fullPath;
+
+    if(d_type != DT_REG) return 0;
+
+    printInfo("===> %s\n", name);
+    bmp = kmalloc(sizeof(struct Bmp), GFP_KERNEL);
+    bmp->pnext = NULL;
+
+    fullPath = kmalloc(strlen(bmpS->backingPath) + namlen + 1, GFP_KERNEL);
+    strcpy(fullPath, bmpS->backingPath);
+    strcat(fullPath, name);
+    bmp->fd = filp_open(fullPath, O_RDWR, 0644);
+    kfree(fullPath);
+    if (IS_ERR_OR_NULL(bmp->fd)) {
+        printError("failed to open file\n");
+        return PTR_ERR(bmp->fd);
+    }
+    bmp->size = bmp->fd->f_inode->i_size;
+    printInfo("file size: %ld.%.2ld MiB\n", bmp->size / 1024 / 1024, (100 * bmp->size / 1024 / 1024) % 100);
+
+    if (!isFileBmp(bmp)) {
+        printInfo("file is not a bmp\n");
+        return -EINVAL;
+    }
+
+    if (getBmpColorDepth(bmp) != 32) {
+        printError("only 32-bit ARGB bitmaps are supported\n");
+        return -EINVAL;
+    }
+
+    fillBmpStruct(bmp);
+
+    // bmp->filesim = vmalloc(bmp->size);
+    // printInfo("vmalloc %lu B\n", bmp->virtualSize);
+    // if(bmp->filesim == NULL) {
+    //     printError("failed to allocate memory for file simulation\n");
+    //     return -ENOMEM;
+    // }
+
+    bmp->virtualOffset = bmpS->totalVirtualSize;
+    bmpS->totalVirtualSize += bmp->virtualSize;
+
+    // add to list
+    if (bmpS->bmps == NULL) {
+        bmpS->bmps = bmp;
+    } else {
+        struct Bmp *last = bmpS->bmps;
+        while (last->pnext != NULL)
+            last = last->pnext;
+        last->pnext = bmp;
+    }
+
+    return 0;
+}
+
+int openBmps(struct BmpStorage *bmpS) {
+    int err = 0;
     bmpS->totalVirtualSize = 0;
-    for (uint i = 0; i < nrFiles; i++) {
-        struct Bmp *bmp = kmalloc(sizeof(struct Bmp), GFP_KERNEL);
-        bmp->pnext = NULL;
-        bmp->path = filePaths[i];
-        printInfo("===> %s\n", bmp->path);
 
-        bmp->fd = filp_open(bmp->path, O_RDWR, 0644);
-        if (IS_ERR_OR_NULL(bmp->fd)) {
-            printError("failed to open file\n");
-            return PTR_ERR(bmp->fd);
-        }
-        bmp->size = bmp->fd->f_inode->i_size;
-        printInfo("file size: %ld.%.2ld MiB\n", bmp->size / 1024 / 1024, (100 * bmp->size / 1024 / 1024) % 100);
-
-        if (!isFileBmp(bmp)) {
-            printInfo("file is not a bmp\n");
-            return -EINVAL;
-        }
-
-        if (getBmpColorDepth(bmp) != 32) {
-            printError("only 32-bit ARGB bitmaps are supported\n");
-            return -EINVAL;
-        }
-
-        fillBmpStruct(bmp);
-
-        // bmp->filesim = vmalloc(bmp->size);
-        // printInfo("vmalloc %lu B\n", bmp->virtualSize);
-        // if(bmp->filesim == NULL) {
-        //     printError("failed to allocate memory for file simulation\n");
-        //     return -ENOMEM;
-        // }
-
-        bmp->virtualOffset = bmpS->totalVirtualSize;
-        bmpS->totalVirtualSize += bmp->virtualSize;
-
-        // add to list
-        if (bmpS->bmps == NULL) {
-            bmpS->bmps = bmp;
-        } else {
-            struct Bmp *last = bmpS->bmps;
-            while (last->pnext != NULL)
-                last = last->pnext;
-            last->pnext = bmp;
-        }
+    if (( err = readdir(bmpS->backingPath, handleFile, (void*)bmpS) )) {
+        printError("cannot read directory %s\n", bmpS->backingPath);
+        closeBmps(bmpS);
+        return err;
     }
     printInfo("===<\n");
     printInfo("total virtual size: %lu.%.2lu MiB (%lu B)\n", bmpS->totalVirtualSize / 1024 / 1024, (100 * bmpS->totalVirtualSize / 1024 / 1024) % 100, bmpS->totalVirtualSize);
-    return 0;
+
+    return err;
 }
 
 void closeBmps(struct BmpStorage *bmpS) {

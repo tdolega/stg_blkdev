@@ -27,16 +27,6 @@
 #define printInfo(...)  printk(KERN_INFO "stg_blkdev: " __VA_ARGS__)
 #define printError(...) printk(KERN_ERR  "stg_blkdev: " __VA_ARGS__)
 
-//// iterate directory
-
-typedef int (*readdir_t)(void *, const char *, int, loff_t, u64, uint);
-
-struct callback_context {
-    struct dir_context ctx;
-    readdir_t filler;
-    void* context;
-};
-
 //// block device
 
 #ifndef SECTOR_SIZE
@@ -62,7 +52,6 @@ struct SteganographyBlockDevice {
 struct Bmp {
     struct file *fd;
     ulong size;
-    char* path;
 
     uint width;
     uint height;
@@ -82,4 +71,5 @@ struct Bmp {
 struct BmpStorage {
     struct Bmp *bmps;
     ulong totalVirtualSize;
+    char* backingPath;
 };

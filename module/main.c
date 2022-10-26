@@ -1,46 +1,9 @@
 #include "stg.h"
 
-// todo: tmp paths here
-char *filePaths[] = {"/tmp/bmps/1.bmp", "/tmp/bmps/3.bmp", "/tmp/bmps/2.bmp", "/tmp/bmps/32b_rgba.bmp", "/tmp/bmps/bigga.bmp", "/tmp/bmps/bigga2.bmp", "/tmp/bmps/bigga3.bmp", "/tmp/bmps/bigga4.bmp"};
-// char *filePaths[] = {"/tmp/bmps/32b_rgba.bmp"};
-
+// path of backing files
 char* backingPath = NULL;
-
 // device instance
 static struct SteganographyBlockDevice *sbd = NULL;
-
-//// iterate directory
-
-int iterate_dir_callback(struct dir_context *ctx, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
-    struct callback_context *buf = container_of(ctx, struct callback_context, ctx);
-    return buf->filler(buf->context, name, namlen, offset, ino, d_type);
-}
-
-int readdir(const char* path, readdir_t filler, void* context) {
-    int err;
-    struct callback_context buf = {
-        .ctx.actor = (filldir_t) iterate_dir_callback,
-        .context = context,
-        .filler = filler
-    };
-
-    struct file* dir = filp_open(path, O_DIRECTORY, S_IRWXU | S_IRWXG | S_IRWXO);
-    if(IS_ERR(dir)) return PTR_ERR(dir);
-
-    err = iterate_dir(dir, &buf.ctx);
-    filp_close(dir, NULL);
-    return err;
-}
-
-//
-
-int fileCallback(void* data, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
-    if(d_type != DT_REG) return 0;
-
-    printInfo("file: %.*s\n", namlen, name);
-
-    return 0;
-}
 
 //// block device operations
 
@@ -142,20 +105,13 @@ static struct blk_mq_ops mqOps = {
 
 static int __init sbdInit(void) {
     int err = 0;
-    printInfo("sbd initialize\n");
+    printInfo("!!! sbd initialize\n");
 
     if (!backingPath) {
         printError("backingPath not provided\n");
         err = -ENOENT;
         goto noBackingPath;
     }
-
-    // if (( err = readdir(backingPath, fileCallback, (void*)0) )) {
-    //     printError("cannot read directory %s\n", backingPath);
-    //     goto failedReadBackingPath;
-    // }
-
-    // return -1; // tmp
 
     sbd = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
     if (sbd == NULL) {
@@ -207,13 +163,19 @@ static int __init sbdInit(void) {
         err = -ENOMEM;
         goto failedAllocBmpS;
     }
-    if (( err = openBmps(filePaths, sizeof(filePaths) / sizeof(char *), sbd->bmpS) )) {
+    sbd->bmpS->backingPath = backingPath;
+    if (( err = openBmps(sbd->bmpS) )) {
         printError("failed to open backing files\n");
         goto failedOpenBmps;
     }
 
     // set device capacity
     sbd->capacity = sbd->bmpS->totalVirtualSize / SECTOR_SIZE;
+    if(sbd->capacity == 0) {
+        printError("capacity is 0\n");
+        err = -EINVAL;
+        goto failedCapacity;
+    }
     set_capacity(sbd->gdisk, sbd->capacity);
     printInfo("sector size: %d B * capacity: %llu sectors = %llu B \n", SECTOR_SIZE, sbd->capacity, sbd->capacity * SECTOR_SIZE);
 
@@ -226,6 +188,7 @@ static int __init sbdInit(void) {
     return 0;
 
 failedToAdd:
+failedCapacity:
     closeBmps(sbd->bmpS); // undo openBmps
 failedOpenBmps:
     kfree(sbd->bmpS); // undo kmalloc bmpS
@@ -246,7 +209,7 @@ noBackingPath:
 
 // release disk and free memory
 static void __exit sbdExit(void) {
-    printInfo("sbd destroy\n");
+    printInfo("!!! sbd destroy\n");
     // todo: cleanup queue?
     closeBmps(sbd->bmpS);
     // todo delete bmps
