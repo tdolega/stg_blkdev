@@ -8,14 +8,6 @@ void bWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
     kernel_write(bmp->fd, buffer, size, &position);
 }
 
-// void fRead(void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-//     memcpy(buffer, bmp->filesim + position, size);
-// }
-
-// void fWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
-//     memcpy(bmp->filesim + position, buffer, size);
-// }
-
 ulong pixelIdxToBmpIdx(struct Bmp *bmp, ulong pixel) {
     uint row = pixel / bmp->width;
     uint col = pixel % bmp->width;
@@ -119,7 +111,7 @@ void fillBmpStruct(struct Bmp *bmp) {
     bRead((uint8 *) &bmp->headerSize, 4, 10, bmp);
     printInfo("header size: %d B\n", bmp->headerSize);
 
-    // idx of the file related to other files
+    // idx of the file
     bRead((uint8 *) &bmp->idx, 2, BMP_IDX_OFFSET, bmp);
 }
 
@@ -130,7 +122,7 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     uint16 bmpsCountReported;
     int err;
 
-    if(d_type != DT_REG) return 0;
+    if (d_type != DT_REG) return 0;
 
     printInfo("===> %s\n", name);
     bmp = kmalloc(sizeof(struct Bmp), GFP_KERNEL);
@@ -174,21 +166,14 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     fillBmpStruct(bmp);
     
     bRead((uint8 *) &bmpsCountReported, 2, BMP_COUNT_OFFSET, bmp);
-    if(bmpsCountReported == 0) {
+    if (bmpsCountReported == 0) {
         printError("file is not a part of a bmp storage\n");
-        if(bmpS->bmps == NULL) {
+        if (bmpS->bmps == NULL) {
             printError("you need to initialize this folder with helper program\n");
         }
         err = -EINVAL;
         goto CLOSE_FILE;
     }
-
-    // bmp->filesim = vmalloc(bmp->size);
-    // printInfo("vmalloc %lu B\n", bmp->virtualSize);
-    // if(bmp->filesim == NULL) {
-    //     printError("failed to allocate memory for file simulation\n");
-    //     return -ENOMEM;
-    // }
 
     bmp->virtualOffset = bmpS->totalVirtualSize;
     bmpS->totalVirtualSize += bmp->virtualSize;
@@ -201,7 +186,7 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
         struct Bmp *bmpPrev = NULL;
         struct Bmp *bmpCurr = bmpS->bmps;
 
-        if(bmpsCountReported != bmpS->count) {
+        if (bmpsCountReported != bmpS->count) {
             printError("file count mismatch, different files have reported different count\n");
             printError("this file belongs to other or none bmp storage");
             err = -EINVAL;
@@ -246,15 +231,15 @@ int openBmps(struct BmpStorage *bmpS) {
 
     bmp = bmpS->bmps;
     while(bmp != NULL) {
-        if(bmp->idx != idx++) {
-            printError("failed to open all bmps, %d is missing\n", idx);
+        if (bmp->idx != idx++) {
+            printError("failed to open all bmps, %d is missing\n", idx - 1);
             printError("there should be %d bmps in this folder\n", bmpS->count);
             closeBmps(bmpS);
             return -EINVAL;
         }
         bmp = bmp->pnext;
     }
-    if(idx != bmpS->count) {
+    if (idx != bmpS->count) {
         printError("there should be %d bmps, but only %d were found\n", bmpS->count, idx);
         closeBmps(bmpS);
         return -EINVAL;
@@ -270,7 +255,6 @@ void closeBmps(struct BmpStorage *bmpS) {
     struct Bmp *nextBmp;
     while (bmp != NULL) {
         if (bmp->fd) filp_close(bmp->fd, NULL);
-        // vfree(bmp->filesim);
 
         nextBmp = bmp->pnext;
         kfree(bmp);

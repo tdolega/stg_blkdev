@@ -59,8 +59,6 @@ struct Bmp {
     ulong virtualSize;
     ulong virtualOffset;
 
-    void* filesim;
-
     struct Bmp* pnext;
 };
 
