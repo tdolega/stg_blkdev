@@ -52,3 +52,6 @@ Mkfile.old
 dkms.conf
 
 userlandable/cmake-build-debug
+
+helper/.idea
+helper/stg_helper
