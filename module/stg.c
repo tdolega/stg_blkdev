@@ -118,12 +118,17 @@ void fillBmpStruct(struct Bmp *bmp) {
     // header size
     bRead((uint8 *) &bmp->headerSize, 4, 10, bmp);
     printInfo("header size: %d B\n", bmp->headerSize);
+
+    // idx of the file related to other files
+    bRead((uint8 *) &bmp->idx, 2, BMP_IDX_OFFSET, bmp);
 }
 
 int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
     struct BmpStorage *bmpS = (struct BmpStorage *) data;
     struct Bmp *bmp;
     char* fullPath;
+    uint16 bmpsCountReported;
+    int err;
 
     if(d_type != DT_REG) return 0;
 
@@ -138,7 +143,8 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     fullPath = kmalloc(strlen(bmpS->backingPath) + 1 + namlen + 1, GFP_KERNEL);
     if (fullPath == NULL) {
         printError("failed to allocate fullPath string\n");
-        return -ENOMEM;
+        err = -ENOMEM;
+        goto FREE_BMP;
     }
     strcpy(fullPath, bmpS->backingPath);
     strcat(fullPath, "/");
@@ -147,22 +153,26 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     kfree(fullPath);
     if (IS_ERR_OR_NULL(bmp->fd)) {
         printError("failed to open file\n");
-        return PTR_ERR(bmp->fd);
+        err = PTR_ERR(bmp->fd);
+        goto FREE_BMP;
     }
     bmp->size = bmp->fd->f_inode->i_size;
     printInfo("file size: %ld.%.2ld MiB\n", bmp->size / 1024 / 1024, (100 * bmp->size / 1024 / 1024) % 100);
 
     if (!isFileBmp(bmp)) {
         printInfo("file is not a bmp\n");
-        return -EINVAL;
+        err = -EINVAL;
+        goto CLOSE_FILE;
     }
 
     if (getBmpColorDepth(bmp) != 32) {
         printError("only 32-bit ARGB bitmaps are supported\n");
-        return -EINVAL;
+        err = -EINVAL;
+        goto CLOSE_FILE;
     }
 
     fillBmpStruct(bmp);
+    bRead((uint8 *) &bmpsCountReported, 2, BMP_COUNT_OFFSET, bmp);
 
     // bmp->filesim = vmalloc(bmp->size);
     // printInfo("vmalloc %lu B\n", bmp->virtualSize);
@@ -177,14 +187,38 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     // add to list
     if (bmpS->bmps == NULL) {
         bmpS->bmps = bmp;
+        bmpS->count = bmpsCountReported;
     } else {
-        struct Bmp *last = bmpS->bmps;
-        while (last->pnext != NULL)
-            last = last->pnext;
-        last->pnext = bmp;
+        struct Bmp *bmpPrev = NULL;
+        struct Bmp *bmpCurr = bmpS->bmps;
+
+        if(bmpsCountReported != bmpS->count) {
+            printError("file count mismatch, different files have reported different count\n");
+            err = -EINVAL;
+            goto CLOSE_FILE;
+        }
+
+        // add to the correct place based on idx
+        while (bmpCurr != NULL && bmpCurr->idx < bmp->idx) {
+            bmpPrev = bmpCurr;
+            bmpCurr = bmpCurr->pnext;
+        }
+        if (bmpPrev == NULL) {
+            bmp->pnext = bmpS->bmps;
+            bmpS->bmps = bmp;
+        } else {
+            bmp->pnext = bmpCurr;
+            bmpPrev->pnext = bmp;
+        }
     }
 
     return 0;
+
+CLOSE_FILE:
+    filp_close(bmp->fd, NULL);
+FREE_BMP:
+    kfree(bmp);
+    return err;
 }
 
 int openBmps(struct BmpStorage *bmpS) {

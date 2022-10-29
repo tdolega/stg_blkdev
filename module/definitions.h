@@ -4,8 +4,9 @@
 
 //// types
 
-#define uint8 unsigned char
 #define uint unsigned int
+#define uint8 unsigned char
+#define uint16 unsigned short
 #define ulong unsigned long
 
 //// macros
@@ -40,10 +41,13 @@ struct SbdWorker {
 #define COLORS_PER_PIXEL 4
 #define USED_BITS_PER_PIXEL 2
 #define BMP_HEADER_SIZE 54
+#define BMP_IDX_OFFSET 6
+#define BMP_COUNT_OFFSET 8
 
 struct Bmp {
     struct file *fd;
     ulong size;
+    uint16 idx;
 
     uint width;
     uint height;
@@ -62,6 +66,7 @@ struct Bmp {
 
 struct BmpStorage {
     struct Bmp *bmps;
+    uint16 count;
     ulong totalVirtualSize;
     char* backingPath;
 };
