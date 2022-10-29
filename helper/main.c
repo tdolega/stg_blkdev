@@ -1,16 +1,17 @@
 #include "main.h"
 
-void printHelp() {
+int printHelp() {
     printf("Usage: stg_helper [mode] [sourceFolder]\n");
     printf("    [modes]:\n");
-    printf("        init   - initializes bitmaps from [sourceFolder] with special header to use them as disk\n");
+    printf("        init - initializes bitmaps from [sourceFolder] with special header to use them as disk\n");
     printf("            stg_helper init ~/myBmps \n");
-    printf("        clean  - removes special header from files in [sourceFolder]\n");
+    printf("        clean - removes special header from files in [sourceFolder]\n");
     printf("            stg_helper clean ~/myBmps \n");
-    printf("        mount  - mount a [sourceFolder]\n");
+    printf("        mount - mount a [sourceFolder]\n");
     printf("            stg_helper mount ~/myBmps \n");
-    printf("        umount - unmount a [sourceFolder]\n");
-    printf("            stg_helper umount ~/myBmps \n");
+    printf("        umount - unmount a disk\n");
+    printf("            stg_helper umount \n");
+    return 1;
 }
 
 int isBmpFile(FILE *file, uint fileSize) {
@@ -136,9 +137,9 @@ int mount(char *folder) {
         return err;
     }
 
-    int isFormatted = system("lsblk /dev/sbd -o FSTYPE -n | grep -q 'ext4'");
+    int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q ext4") == 0;
     if(!isFormatted) {
-        err = system("mkfs.ext4 /dev/sbd -f -L stg");
+        err = system("mkfs.ext4 /dev/sbd -L stg -m 0 -q");
         if(err) {
             printf("ERROR: failed to mkfs.ext4\n");
             return err;
@@ -150,16 +151,17 @@ int mount(char *folder) {
         printf("ERROR: failed to mkdir /mnt/stg\n");
         return err;
     }
-    err = system("mount /dev/sbd /mnt/stg");
+    err = system("mount /dev/sbd /mnt/stg -o sync");
     if(err) {
         printf("ERROR: failed to mount /dev/sbd\n");
         return err;
     }
-    err = system("chown $USER /mnt/stg");
+    err = system("chown $USER /mnt/stg"); // TODO: now it doesn't work, probably $USER is root
     if(err) {
         printf("ERROR: failed to chown /mnt/stg\n");
         return err;
     }
+    printf("mounted /dev/sbd to /mnt/stg\n");
     return 0;
 }
 
@@ -175,25 +177,27 @@ int umount(char *folder) {
         printf("ERROR: failed to unload stg_blkdev module -r\n");
         return err;
     }
+    printf("unmounted /dev/sbd\n");
     return 0;
 }
 
 int main(int argc, char *argv[]) {
-    if(argc < 3) {
-        printHelp();
-        exit(0);
-    }
+    if(argc < 2) return printHelp();
 
     char *mode = argv[1];
     char *folder = argv[2];
 
     if(strcmp(mode, "init") == 0) {
+        if(argc != 3) return printHelp();
         return init(folder);
     } else if(strcmp(mode, "clean") == 0) {
+        if(argc != 3) return printHelp();
         return clean(folder);
     } else if(strcmp(mode, "mount") == 0) {
+        if(argc != 3) return printHelp();
         return mount(folder);
     } else if(strcmp(mode, "umount") == 0) {
+        if(argc != 2) return printHelp();
         return umount(folder);
     } else {
         printf("ERROR: unknown mode %s\n", mode);
