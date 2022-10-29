@@ -85,7 +85,7 @@ void closeBmps(struct OpenBmp *openedBmps) {
     }
 }
 
-void init(char *folder) {
+int init(char *folder) {
     struct OpenBmp *openedBmps = NULL;
     uint16 bmpsCount = openBmps(folder, &openedBmps);
     struct OpenBmp *openBmp = openedBmps;
@@ -96,10 +96,14 @@ void init(char *folder) {
         openBmp = openBmp->pnext;
     }
     printf("initialized %d bitmap files\n", bmpsCount);
+    if(bmpsCount == 0 && openedBmps != NULL) {
+        return 1; // bmpCount overflowed
+    }
     closeBmps(openedBmps);
+    return 0;
 }
 
-void clean(char *folder) {
+int clean(char *folder) {
     struct OpenBmp *openedBmps = NULL;
     uint16 bmpsCount = openBmps(folder, &openedBmps);
     struct OpenBmp *openBmp = openedBmps;
@@ -112,34 +116,66 @@ void clean(char *folder) {
     }
     printf("cleaned %d bitmap files\n", bmpsCount);
     closeBmps(openedBmps);
+    return 0;
 }
 
-void mount(char *folder) {
-    if(system("modinfo stg_blkdev")) {
+int mount(char *folder) {
+    int err;
+    if(system("modinfo stg_blkdev"REDIRECT_STDOUT)) {
         printf("ERROR: stg_blkdev is already mounted\n");
-        return;
+        return 1;
     }
 
     char* modprobeCmd = "modprobe stg_blkdev backingPath=";
     char* modprobeCmdFull = malloc(strlen(modprobeCmd) + strlen(folder) + 1);
     sprintf(modprobeCmdFull, "%s%s", modprobeCmd, folder);
-    system(modprobeCmdFull);
+    err = system(modprobeCmdFull);
     free(modprobeCmdFull);
-
-    system("mkdir /mnt/stg");
-    system("chown $USER /mnt/stg");
+    if(err) {
+        printf("ERROR: failed to load stg_blkdev module\n");
+        return err;
+    }
 
     int isFormatted = system("lsblk /dev/sbd -o FSTYPE -n | grep -q 'ext4'");
     if(!isFormatted) {
-        system("mkfs.ext4 /dev/sbd -f");
+        err = system("mkfs.ext4 /dev/sbd -f -L stg");
+        if(err) {
+            printf("ERROR: failed to mkfs.ext4\n");
+            return err;
+        }
     }
 
-    system("mount /dev/sbd /mnt/stg");
+    err = system("mkdir -p /mnt/stg");
+    if(err) {
+        printf("ERROR: failed to mkdir /mnt/stg\n");
+        return err;
+    }
+    err = system("mount /dev/sbd /mnt/stg");
+    if(err) {
+        printf("ERROR: failed to mount /dev/sbd\n");
+        return err;
+    }
+    err = system("chown $USER /mnt/stg");
+    if(err) {
+        printf("ERROR: failed to chown /mnt/stg\n");
+        return err;
+    }
+    return 0;
 }
 
-void umount(char *folder) {
-    system("umount /dev/sbd");
-    system("modprobe stg_blkdev -r");
+int umount(char *folder) {
+    int err;
+    err = system("umount /dev/sbd");
+    if(err) {
+        printf("ERROR: failed to umount /dev/sbd\n");
+        return err;
+    }
+    err = system("modprobe stg_blkdev -r");
+    if(err) {
+        printf("ERROR: failed to unload stg_blkdev module -r\n");
+        return err;
+    }
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -152,15 +188,16 @@ int main(int argc, char *argv[]) {
     char *folder = argv[2];
 
     if(strcmp(mode, "init") == 0) {
-        init(folder);
+        return init(folder);
     } else if(strcmp(mode, "clean") == 0) {
-        clean(folder);
+        return clean(folder);
     } else if(strcmp(mode, "mount") == 0) {
-        mount(folder);
+        return mount(folder);
     } else if(strcmp(mode, "umount") == 0) {
-        umount(folder);
+        return umount(folder);
     } else {
         printf("ERROR: unknown mode %s\n", mode);
         printHelp();
     }
+    return 0;
 }
