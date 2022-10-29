@@ -233,14 +233,33 @@ FREE_BMP:
 
 int openBmps(struct BmpStorage *bmpS) {
     int err = 0;
+    uint idx = 0;
+    struct Bmp *bmp;
+    
     bmpS->totalVirtualSize = 0;
-
     if (( err = readdir(bmpS->backingPath, handleFile, (void*)bmpS) )) {
         printError("failed to read directory %s\n", bmpS->backingPath);
         closeBmps(bmpS);
         return err;
     }
     printInfo("===<\n");
+
+    bmp = bmpS->bmps;
+    while(bmp != NULL) {
+        if(bmp->idx != idx++) {
+            printError("failed to open all bmps, %d is missing\n", idx);
+            printError("there should be %d bmps in this folder\n", bmpS->count);
+            closeBmps(bmpS);
+            return -EINVAL;
+        }
+        bmp = bmp->pnext;
+    }
+    if(idx != bmpS->count) {
+        printError("there should be %d bmps, but only %d were found\n", bmpS->count, idx);
+        closeBmps(bmpS);
+        return -EINVAL;
+    }
+
     printInfo("total virtual size: %lu.%.2lu MiB (%lu B)\n", bmpS->totalVirtualSize / 1024 / 1024, (100 * bmpS->totalVirtualSize / 1024 / 1024) % 100, bmpS->totalVirtualSize);
 
     return err;
