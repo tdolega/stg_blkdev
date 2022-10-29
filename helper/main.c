@@ -139,9 +139,15 @@ int mount(char *folder) {
 
     int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q ext4") == 0;
     if(!isFormatted) {
-        err = system("mkfs.ext4 /dev/sbd -L stg -m 0 -q");
+
+        //// ext4
+        // err = system("mkfs.ext4 /dev/sbd -L stg -q -m 0");
+        //// btrfs
+        err = system("mkfs.btrfs /dev/sbd -L stg -q --mixed -m single -d single");
+
         if(err) {
-            printf("ERROR: failed to mkfs.ext4\n");
+            printf("ERROR: failed to mkfs\n");
+            system("modprobe stg_blkdev -r");
             return err;
         }
     }
