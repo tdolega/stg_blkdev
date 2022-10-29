@@ -172,7 +172,16 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     }
 
     fillBmpStruct(bmp);
+    
     bRead((uint8 *) &bmpsCountReported, 2, BMP_COUNT_OFFSET, bmp);
+    if(bmpsCountReported == 0) {
+        printError("file is not a part of a bmp storage\n");
+        if(bmpS->bmps == NULL) {
+            printError("you need to initialize this folder with helper program\n");
+        }
+        err = -EINVAL;
+        goto CLOSE_FILE;
+    }
 
     // bmp->filesim = vmalloc(bmp->size);
     // printInfo("vmalloc %lu B\n", bmp->virtualSize);
@@ -194,6 +203,7 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
 
         if(bmpsCountReported != bmpS->count) {
             printError("file count mismatch, different files have reported different count\n");
+            printError("this file belongs to other or none bmp storage");
             err = -EINVAL;
             goto CLOSE_FILE;
         }
