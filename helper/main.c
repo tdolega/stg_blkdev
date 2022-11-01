@@ -127,6 +127,7 @@ int mount(char *folder) {
         return 1;
     }
 
+    printf("loading stg_blkdev module\n");
     char* modprobeCmd = "modprobe stg_blkdev backingPath=";
     char* modprobeCmdFull = malloc(strlen(modprobeCmd) + strlen(folder) + 1);
     sprintf(modprobeCmdFull, "%s%s", modprobeCmd, folder);
@@ -139,6 +140,7 @@ int mount(char *folder) {
 
     int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q ext4") == 0;
     if(!isFormatted) {
+        printf("formatting /dev/sbd\n");
 
         //// ext4
         // err = system("mkfs.ext4 /dev/sbd -L stg -q -m 0");
@@ -157,6 +159,7 @@ int mount(char *folder) {
         printf("ERROR: failed to mkdir /mnt/stg\n");
         return err;
     }
+    printf("mounting /dev/sbd to /mnt/stg\n");
     err = system("mount /dev/sbd /mnt/stg -o sync");
     if(err) {
         printf("ERROR: failed to mount /dev/sbd\n");
@@ -167,23 +170,25 @@ int mount(char *folder) {
         printf("ERROR: failed to chown /mnt/stg\n");
         return err;
     }
-    printf("mounted /dev/sbd to /mnt/stg\n");
+    printf("OK\n");
     return 0;
 }
 
 int umount(char *folder) {
     int err;
+    printf("unmounting /dev/sbd\n");
     err = system("umount /dev/sbd");
     if(err) {
         printf("ERROR: failed to umount /dev/sbd\n");
         return err;
     }
+    printf("unloading stg_blkdev module\n");
     err = system("modprobe stg_blkdev -r");
     if(err) {
         printf("ERROR: failed to unload stg_blkdev module -r\n");
         return err;
     }
-    printf("unmounted /dev/sbd\n");
+    printf("OK\n");
     return 0;
 }
 
