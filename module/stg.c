@@ -124,7 +124,7 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
 
     if (d_type != DT_REG) return 0;
 
-    printInfo("===> %s\n", name);
+    printInfo("===> %.*s\n", namlen, name);
     bmp = kmalloc(sizeof(struct Bmp), GFP_KERNEL);
     if (bmp == NULL) {
         printError("failed to allocate bmp struct\n");
@@ -140,7 +140,7 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     }
     strcpy(fullPath, bmpS->backingPath);
     strcat(fullPath, "/");
-    strcat(fullPath, name);
+    strncat(fullPath, name, namlen);
     bmp->fd = filp_open(fullPath, O_RDWR, 0644);
     kfree(fullPath);
     if (IS_ERR_OR_NULL(bmp->fd)) {
