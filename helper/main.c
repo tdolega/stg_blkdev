@@ -138,7 +138,8 @@ int mount(char *folder) {
         return err;
     }
 
-    int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q ext4") == 0;
+    // int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q ext4") == 0;
+    int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q btrfs") == 0;
     if(!isFormatted) {
         printf("formatting /dev/sbd\n");
 
