@@ -138,15 +138,15 @@ int mount(char *folder) {
         return err;
     }
 
-    // int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q ext4") == 0;
-    int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q btrfs") == 0;
+    int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q ext4") == 0;
+    // int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q btrfs") == 0;
     if(!isFormatted) {
         printf("formatting /dev/sbd\n");
 
         //// ext4
-        // err = system("mkfs.ext4 /dev/sbd -L stg -q -m 0");
+        err = system("mkfs.ext4 /dev/sbd -L stg -q -m 0");
         //// btrfs
-        err = system("mkfs.btrfs /dev/sbd -L stg -q --mixed -m single -d single");
+        // err = system("mkfs.btrfs /dev/sbd -L stg -q --mixed -m single -d single");
 
         if(err) {
             printf("ERROR: failed to mkfs\n");
@@ -166,7 +166,7 @@ int mount(char *folder) {
         printf("ERROR: failed to mount /dev/sbd\n");
         return err;
     }
-    err = system("chown $USER /mnt/stg"); // TODO: now it doesn't work, probably $USER is root
+    err = system("if [[ -v SUDO_USER ]]; then chown $SUDO_USER /mnt/stg; else chown $USER /mnt/stg; fi");
     if(err) {
         printf("ERROR: failed to chown /mnt/stg\n");
         return err;

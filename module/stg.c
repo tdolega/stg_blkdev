@@ -35,7 +35,7 @@ void bEncode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
         for (uint8 colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
             uint8 color, twoBits;
             bRead(&color, 1, pixelIdx + colorIdx, bmp);
-            twoBits = (byte >> (colorIdx * USED_BITS_PER_PIXEL)) & 0b11;
+            twoBits = (byte >> (colorIdx * USED_BITS_PER_PIXEL)) & 0b00000011;
             color = (color & 0b11111100) | twoBits;
             bWrite(&color, 1, pixelIdx + colorIdx, bmp);
         }
