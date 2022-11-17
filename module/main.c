@@ -1,9 +1,207 @@
-#include "stg.h"
+#include "main.h"
 
-// path of backing files
-char* backingPath = NULL;
-// device instance
-static struct SteganographyBlockDevice *sbd = NULL;
+// controller
+static struct SteganographyControlDevice *ctlDev = NULL;
+
+//// add and remove devices
+
+char getNextAvailableLetter(void) {
+    char letter = 'a';
+    while (letter <= 'z') {
+        struct SteganographyBlockDevice *dev = ctlDev->pnext;
+        while (dev != NULL) {
+            if (dev->letter == letter) {
+                break;
+            }
+            dev = dev->pnext;
+        }
+        if (dev == NULL) {
+            return letter;
+        }
+        letter++;
+    }
+    return 0;
+}
+
+int addDev(char* backingPath, char** name) {
+    int err = 0;
+    struct SteganographyBlockDevice *dev = NULL;
+    struct SteganographyBlockDevice *pprev = NULL;
+    
+    printInfo("!!! add device\n");
+
+    if (!backingPath) {
+        printError("backingPath not provided\n");
+        err = -ENOENT;
+        goto noBackingPath;
+    }
+
+    dev = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
+    if (dev == NULL) {
+        printError("failed to allocate dev struct\n");
+        err = -ENOMEM;
+        goto failedAllocdev;
+    }
+
+    dev->letter = getNextAvailableLetter();
+    if (dev->letter == 0) {
+        printError("no available letter\n");
+        err = -ENOMEM;
+        goto failedAllocLetter;
+    }
+
+    *name = kmalloc(sizeof (char) * strlen(BLK_DEV_NAME) + 1 + 1, GFP_KERNEL);
+    if (*name == NULL) {
+        printError("failed to allocate memory for name\n");
+        err = -ENOMEM;
+        goto failedAllocName;
+    }
+    sprintf(*name, "%s%c", BLK_DEV_NAME, dev->letter);
+
+    // register new block device and get device major number
+    dev->devMajor = register_blkdev(0, *name);
+    if (dev->devMajor < 0) {
+        printError("failed to register block device\n");
+        err = dev->devMajor;
+        goto failedRegisterBlkDev;
+    }
+
+    // allocate queue
+    if (blk_mq_alloc_sq_tag_set(&dev->tag_set, &mqOps, 128, BLK_MQ_F_SHOULD_MERGE)) {
+        printError("failed to allocate device queue\n");
+        err = -ENOMEM;
+        goto failedAllocQueue;
+    }
+
+    // allocate gdisk
+    dev->gdisk = blk_mq_alloc_disk(&dev->tag_set, dev);
+    if (dev->gdisk == NULL) {
+        printError("failed to allocate gdisk\n");
+        err = -ENOMEM;
+        goto failedAllocGdisk;
+    }
+
+    // set all required flags and data
+    dev->gdisk->flags = GENHD_FL_NO_PART;
+    dev->gdisk->major = dev->devMajor; // todo: duplicates
+    dev->gdisk->minors = 1; // any number
+    dev->gdisk->first_minor = 0;
+
+    dev->gdisk->fops = &bdOps;
+    dev->gdisk->private_data = dev;
+
+    // set device name as it will be represented in /dev
+    strncpy(dev->gdisk->disk_name, *name + 0, 9);
+    printInfo("adding disk /dev/%s\n", dev->gdisk->disk_name);
+
+    // open backing files
+    dev->bmpS = kmalloc(sizeof(struct BmpStorage), GFP_KERNEL);
+    if (dev->bmpS == NULL) {
+        printError("failed to allocate dev->bmpS struct\n");
+        err = -ENOMEM;
+        goto failedAllocBmpS;
+    }
+    dev->bmpS->backingPath = backingPath;
+    if (( err = openBmps(dev->bmpS) )) {
+        printError("failed to open backing files\n");
+        goto failedOpenBmps;
+    }
+
+    // set device capacity
+    dev->capacity = dev->bmpS->totalVirtualSize / SECTOR_SIZE;
+    if(dev->capacity == 0) {
+        printError("capacity is 0\n");
+        err = -EINVAL;
+        goto failedCapacity;
+    }
+    set_capacity(dev->gdisk, dev->capacity);
+    printInfo("sector size: %d B * capacity: %llu sectors = %llu B \n", SECTOR_SIZE, dev->capacity, dev->capacity * SECTOR_SIZE);
+
+    // notify kernel about new disk device
+    if(( err = add_disk(dev->gdisk) )) {
+        printError("Failed to add disk\n");
+        goto failedToAdd;
+    }
+
+    if(ctlDev->pnext == NULL) {
+        ctlDev->pnext = dev;
+    } else {
+        pprev = ctlDev->pnext;
+        while(pprev->pnext != NULL) {
+            pprev = pprev->pnext;
+        }
+        pprev->pnext = dev;
+    }
+
+    kfree(*name);
+    return 0;
+
+failedToAdd:
+failedCapacity:
+    closeBmps(dev->bmpS); // undo openBmps
+failedOpenBmps:
+    kfree(dev->bmpS); // undo kmalloc bmpS
+failedAllocBmpS:
+    put_disk(dev->gdisk); // undo blk_mq_alloc_disk
+failedAllocGdisk:
+    blk_mq_free_tag_set(&dev->tag_set); // undo blk_mq_alloc_sq_tag_set
+failedAllocQueue:
+    unregister_blkdev(dev->devMajor, *name); // undo register_blkdev
+failedRegisterBlkDev:
+    kfree(dev); // undo kmalloc dev
+    kfree(*name); // undo kmalloc name
+failedAllocName:
+failedAllocLetter:
+failedAllocdev:
+    kfree(backingPath); // undo kmalloc backingPath in parent function
+noBackingPath:
+    printError("addDev() failed with error %d", err);
+    return err;
+}
+
+int removeDev(struct SteganographyBlockDevice *dev) {
+    // todo: cleanup queue?
+
+    printInfo("removing disk /dev/%s\n", dev->gdisk->disk_name);
+
+    if(dev->bmpS) {
+        closeBmps(dev->bmpS);
+        kfree(dev->bmpS);
+    }
+    if(dev->gdisk) {
+        del_gendisk(dev->gdisk);
+        put_disk(dev->gdisk);
+    } else {
+        printError("dev->gdisk is NULL\n");
+    }
+    kfree(dev->bmpS->backingPath);
+    unregister_blkdev(dev->devMajor, dev->gdisk->disk_name); // todo: maybe do it first to prevent new requests?
+    kfree(dev);
+    return 0;
+}
+
+int findRemoveDev(char* backingPath) {
+    struct SteganographyBlockDevice *pprev = NULL;
+    struct SteganographyBlockDevice *dev = ctlDev->pnext; // todo: single line?
+
+    printInfo("!!! remove device\n");
+
+    while(dev != NULL) {
+        if(strcmp(dev->bmpS->backingPath, backingPath) == 0) {
+            if(pprev == NULL)
+                ctlDev->pnext = dev->pnext;
+            else
+                pprev->pnext = dev->pnext;
+            
+            removeDev(dev);
+            return 0;
+        }
+        pprev = dev;
+        dev = dev->pnext;
+    }
+    printError("device %s not found\n", backingPath);
+    return 1;
+}
 
 //// block device operations
 
@@ -16,7 +214,64 @@ static void devRelease(struct gendisk *gdisk, fmode_t mode) {
 }
 
 int devIoCtl(struct block_device *bd, fmode_t mode, uint cmd, ulong arg) {
-    return -ENOTTY;
+    int err = 0;
+    int copied;
+    char* backingPath;
+
+    if(strcmp(bd->bd_disk->disk_name, CTL_DEV_NAME) != 0) {
+        printError("ioctl only supported for control device\n");
+        return -EINVAL;
+    }
+
+    if(arg == 0) {
+        printError("arg is NULL\n");
+        return -EINVAL;
+    }
+
+    backingPath = kmalloc(MAX_BACKING_LEN, GFP_KERNEL);
+    if(backingPath == NULL) {
+        printError("failed to allocate memory for backingPath\n");
+        return -ENOMEM;
+    }
+
+    copied = copy_from_user(backingPath, (char*)arg, MAX_BACKING_LEN);
+    if(copied < 0) {
+        printError("copy_from_user failed\n");
+        err = -EINVAL;
+        goto failedCopyFromUser;
+    }
+    if(copied == MAX_BACKING_LEN) {
+        printError("backingPath too long\n");
+        err = -EINVAL;
+        goto failedCopyFromUser;
+    }
+
+    if (cmd == IOCTL_DEV_ADD) {
+        char* name;
+        err = addDev(backingPath, &name);
+        name[4] = '\0';
+        if(err) return err;
+        copied = copy_to_user((char*)arg, name, MAX_BACKING_LEN);
+        if(copied < 0) {
+            printError("copy_to_user failed\n");
+            err = -EINVAL;
+            goto failedCopyFromUser;
+        }
+        if(copied == MAX_BACKING_LEN) {
+            printError("name too long\n");
+            err = -EINVAL;
+            goto failedCopyFromUser;
+        }
+        return 0;
+    } else if(cmd == IOCTL_DEV_REMOVE) {
+        return findRemoveDev(backingPath);
+    } else {
+        printError("unknown ioctl command %d", cmd);
+        err = -EINVAL;
+    }
+failedCopyFromUser:
+    kfree(backingPath);
+    return err;
 }
 
 // set block device file I/O
@@ -98,123 +353,102 @@ static struct blk_mq_ops mqOps = {
 
 //// init && exit
 
-static int __init sbdInit(void) {
+static int __init moduleInit(void) {
     int err = 0;
-    printInfo("!!! sbd initialize\n");
+    printInfo("!!! module initialize\n");
 
-    if (!backingPath) {
-        printError("backingPath not provided\n");
-        err = -ENOENT;
-        goto noBackingPath;
-    }
-
-    sbd = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
-    if (sbd == NULL) {
-        printError("failed to allocate sbd struct\n");
+    ctlDev = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
+    if (ctlDev == NULL) {
+        printError("failed to allocate dev struct\n");
         err = -ENOMEM;
-        goto failedAllocSbd;
+        goto failedAllocdev;
     }
 
     // register new block device and get device major number
-    sbd->devMajor = register_blkdev(0, BLK_DEV_NAME);
-    if (sbd->devMajor < 0) {
-        printError("failed to register block device\n");
-        err = sbd->devMajor;
+    ctlDev->devMajor = register_blkdev(0, CTL_DEV_NAME);
+    if (ctlDev->devMajor < 0) {
+        printError("failed to register control device\n");
+        err = ctlDev->devMajor;
         goto failedRegisterBlkDev;
     }
 
     // allocate queue
-    if (blk_mq_alloc_sq_tag_set(&sbd->tag_set, &mqOps, 128, BLK_MQ_F_SHOULD_MERGE)) {
+    if (blk_mq_alloc_sq_tag_set(&ctlDev->tag_set, &mqOps, 128, BLK_MQ_F_SHOULD_MERGE)) {
         printError("failed to allocate device queue\n");
         err = -ENOMEM;
         goto failedAllocQueue;
     }
 
     // allocate gdisk
-    sbd->gdisk = blk_mq_alloc_disk(&sbd->tag_set, sbd);
-    if (sbd->gdisk == NULL) {
+    ctlDev->gdisk = blk_mq_alloc_disk(&ctlDev->tag_set, ctlDev);
+    if (ctlDev->gdisk == NULL) {
         printError("failed to allocate gdisk\n");
         err = -ENOMEM;
         goto failedAllocGdisk;
     }
 
     // set all required flags and data
-    sbd->gdisk->flags = GENHD_FL_NO_PART;
-    sbd->gdisk->major = sbd->devMajor; // todo: duplicates
-    sbd->gdisk->minors = 1; // any number
-    sbd->gdisk->first_minor = 0;
+    ctlDev->gdisk->flags = GENHD_FL_NO_PART;
+    ctlDev->gdisk->major = ctlDev->devMajor; // todo: duplicates
+    ctlDev->gdisk->minors = 1; // any number
+    ctlDev->gdisk->first_minor = 0;
 
-    sbd->gdisk->fops = &bdOps;
-    sbd->gdisk->private_data = sbd;
+    ctlDev->gdisk->fops = &bdOps;
+    ctlDev->gdisk->private_data = ctlDev;
 
     // set device name as it will be represented in /dev
-    strncpy(sbd->gdisk->disk_name, BLK_DEV_NAME + 0, 9);
-    printInfo("adding disk /dev/%s\n", sbd->gdisk->disk_name);
+    strncpy(ctlDev->gdisk->disk_name, CTL_DEV_NAME, 11);
+    printInfo("adding disk /dev/%s\n", ctlDev->gdisk->disk_name);
 
-    // open backing files
-    sbd->bmpS = kmalloc(sizeof(struct BmpStorage), GFP_KERNEL);
-    if (sbd->bmpS == NULL) {
-        printError("failed to allocate sbd->bmpS struct\n");
-        err = -ENOMEM;
-        goto failedAllocBmpS;
-    }
-    sbd->bmpS->backingPath = backingPath;
-    if (( err = openBmps(sbd->bmpS) )) {
-        printError("failed to open backing files\n");
-        goto failedOpenBmps;
-    }
+    ctlDev->bmpS = NULL;
 
     // set device capacity
-    sbd->capacity = sbd->bmpS->totalVirtualSize / SECTOR_SIZE;
-    if(sbd->capacity == 0) {
-        printError("capacity is 0\n");
-        err = -EINVAL;
-        goto failedCapacity;
-    }
-    set_capacity(sbd->gdisk, sbd->capacity);
-    printInfo("sector size: %d B * capacity: %llu sectors = %llu B \n", SECTOR_SIZE, sbd->capacity, sbd->capacity * SECTOR_SIZE);
+    ctlDev->capacity = 0;
+    set_capacity(ctlDev->gdisk, ctlDev->capacity);
 
     // notify kernel about new disk device
-    if(( err = add_disk(sbd->gdisk) )) {
+    if(( err = add_disk(ctlDev->gdisk) )) {
         printError("Failed to add disk\n");
         goto failedToAdd;
     }
 
+    ctlDev->pnext = NULL;
+
     return 0;
 
 failedToAdd:
-failedCapacity:
-    closeBmps(sbd->bmpS); // undo openBmps
-failedOpenBmps:
-    kfree(sbd->bmpS); // undo kmalloc bmpS
-failedAllocBmpS:
-    put_disk(sbd->gdisk); // undo blk_mq_alloc_disk
+    put_disk(ctlDev->gdisk); // undo blk_mq_alloc_disk
 failedAllocGdisk:
-    blk_mq_free_tag_set(&sbd->tag_set); // undo blk_mq_alloc_sq_tag_set
+    blk_mq_free_tag_set(&ctlDev->tag_set); // undo blk_mq_alloc_sq_tag_set
 failedAllocQueue:
-    unregister_blkdev(sbd->devMajor, BLK_DEV_NAME); // undo register_blkdev
+    unregister_blkdev(ctlDev->devMajor, CTL_DEV_NAME); // undo register_blkdev
 failedRegisterBlkDev:
-    kfree(sbd); // undo kmalloc sbd
-failedAllocSbd:
-noBackingPath:
-    printError("sbdInit() failed with error %d", err);
+    kfree(ctlDev); // undo kmalloc dev
+failedAllocdev:
+    printError("devInit() failed with error %d", err);
     return err;
 }
 
 // release disk and free memory
-static void __exit sbdExit(void) {
-    printInfo("!!! sbd destroy\n");
+static void __exit moduleExit(void) {
+    struct SteganographyBlockDevice *dev = ctlDev->pnext;
+    printInfo("!!! module exit\n");
+    while(dev) {
+        struct SteganographyBlockDevice *next = dev->pnext;
+        removeDev(dev);
+        dev = next;
+    }
+    
     // todo: cleanup queue?
-    closeBmps(sbd->bmpS);
-    kfree(sbd->bmpS);
-    del_gendisk(sbd->gdisk);
-    put_disk(sbd->gdisk);
-    unregister_blkdev(sbd->devMajor, BLK_DEV_NAME); // todo: maybe do it first to prevent new requests?
-    kfree(sbd);
+    // closeBmps(ctlDev->bmpS);
+    // kfree(ctlDev->bmpS);
+    del_gendisk(ctlDev->gdisk);
+    put_disk(ctlDev->gdisk);
+    unregister_blkdev(ctlDev->devMajor, CTL_DEV_NAME); // todo: maybe do it first to prevent new requests?
+    kfree(ctlDev);
 }
 
-module_init(sbdInit);
-module_exit(sbdExit);
-module_param(backingPath, charp, 0);
+module_init(moduleInit);
+module_exit(moduleExit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Tymoteusz Dolega");

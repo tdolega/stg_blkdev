@@ -20,15 +20,35 @@
 #define SECTOR_SIZE 512
 #endif
 
-#define BLK_DEV_NAME "sbd"
+#define CTL_DEV_NAME "stg_manager"
+#define BLK_DEV_NAME "stg"
+
+#define IOCTL_DEV_ADD 55001
+#define IOCTL_DEV_REMOVE 55002
+#define MAX_BACKING_LEN 1024
 
 struct SteganographyBlockDevice {
     int devMajor;
+    char letter;
     sector_t capacity;
     struct blk_mq_tag_set tag_set;
     struct request_queue *queue;
     struct gendisk *gdisk;
     struct BmpStorage *bmpS;
+
+    struct SteganographyBlockDevice *pnext;
+};
+
+struct SteganographyControlDevice {
+    int devMajor;
+    char letter;
+    sector_t capacity;
+    struct blk_mq_tag_set tag_set;
+    struct request_queue *queue;
+    struct gendisk *gdisk;
+    struct BmpStorage *bmpS;
+
+    struct SteganographyBlockDevice *pnext;
 };
 
 struct SbdWorker {

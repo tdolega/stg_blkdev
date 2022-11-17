@@ -1,16 +1,27 @@
 #include "main.h"
 
 int printHelp() {
-    printf("Usage: stg_helper [mode] [sourceFolder]\n");
-    printf("    [modes]:\n");
+    printf("Usage: stg_helper [mode] [sourceFolder?] [mountpoint?]\n");
+    printf("\n");
+    printf("    typical modes:\n");
     printf("        init - initializes bitmaps from [sourceFolder] with special header to use them as disk\n");
-    printf("            stg_helper init ~/myBmps \n");
+    printf("            stg_helper init ~/myBmps\n");
     printf("        clean - removes special header from files in [sourceFolder]\n");
-    printf("            stg_helper clean ~/myBmps \n");
-    printf("        mount - mount a [sourceFolder]\n");
-    printf("            stg_helper mount ~/myBmps \n");
-    printf("        umount - unmount a disk\n");
-    printf("            stg_helper umount \n");
+    printf("            stg_helper clean ~/myBmps\n");
+    printf("        mount - add and mount a [sourceFolder] to [mountpoint]\n");
+    printf("            stg_helper mount ~/myBmps /mnt/stg\n");
+    printf("        umount - unmount and remove a disk based on [sourceFolder]\n");
+    printf("            stg_helper umount ~/myBmps\n");
+    printf("\n");
+    printf("    advanced modes:\n");
+    printf("        add - add a disk based on [sourceFolder]\n");
+    printf("            stg_helper add ~/myBmps\n");
+    printf("        remove - remove a disk based on [sourceFolder]\n");
+    printf("            stg_helper remove ~/myBmps\n");
+    printf("        load - load driver\n");
+    printf("            stg_helper load\n");
+    printf("        unload - unload driver\n");
+    printf("            stg_helper unload\n");
     return 1;
 }
 
@@ -108,11 +119,10 @@ int clean(char *folder) {
     struct OpenBmp *openedBmps = NULL;
     uint16 bmpsCount = openBmps(folder, &openedBmps);
     struct OpenBmp *openBmp = openedBmps;
-    uint16 zero = 0;
+    uint zero = 0;
     while (openBmp != NULL) {
         fseek(openBmp->file, BMP_IDX_OFFSET, SEEK_SET);
-        fwrite(&zero, 1, 2, openBmp->file);
-        fwrite(&zero, 1, 2, openBmp->file);
+        fwrite(&zero, 1, 4, openBmp->file);
         openBmp = openBmp->pnext;
     }
     printf("cleaned %d bitmap files\n", bmpsCount);
@@ -120,100 +130,199 @@ int clean(char *folder) {
     return 0;
 }
 
-int mount(char *folder) {
-    int err;
-    if(system("modinfo stg_blkdev"REDIRECT_STDOUT)) {
-        printf("ERROR: stg_blkdev is already mounted\n");
-        return 1;
+int isCtlLoaded() {
+    return system("modinfo stg_blkdev"REDIRECT_STDOUT);
+}
+
+int loadCtl() {
+    return system("modprobe stg_blkdev");
+}
+
+int unloadCtl() {
+    return system("modprobe -r stg_blkdev");
+}
+
+int sendIoCtl(int command, char *folder, char **name) {
+    int err = 0;
+    int fd = open("/dev/stg_manager", O_RDWR);
+    if(fd < 0) {
+        printf("ERROR: failed to open /dev/stg_manager\n");
+        return fd;
     }
 
-    printf("loading stg_blkdev module\n");
-    char* modprobeCmd = "modprobe stg_blkdev backingPath=";
-    char* modprobeCmdFull = malloc(strlen(modprobeCmd) + strlen(folder) + 1);
-    sprintf(modprobeCmdFull, "%s%s", modprobeCmd, folder);
-    err = system(modprobeCmdFull);
-    free(modprobeCmdFull);
-    if(err) {
-        printf("ERROR: failed to load stg_blkdev module\n");
-        return err;
-    }
+    char *buf = malloc(MAX_BACKING_LEN);
+    strncpy(buf, folder, MAX_BACKING_LEN - 1);
+    buf[MAX_BACKING_LEN - 1] = 0;
 
-    int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q ext4") == 0;
-    // int isFormatted = system("blkid -o value -s TYPE /dev/sbd | grep -q btrfs") == 0;
-    if(!isFormatted) {
-        printf("formatting /dev/sbd\n");
-
-        //// ext4
-        err = system("mkfs.ext4 /dev/sbd -L stg -q -m 0");
-        //// btrfs
-        // err = system("mkfs.btrfs /dev/sbd -L stg -q --mixed -m single -d single");
-
-        if(err) {
-            printf("ERROR: failed to mkfs\n");
-            system("modprobe stg_blkdev -r");
-            return err;
+    if(strnlen(buf, MAX_BACKING_LEN) >= MAX_BACKING_LEN - 1) {
+        printf("ERROR: path too long\n");
+        err = 1;
+    } else {
+        err = ioctl(fd, command, buf);
+        if(err == 0 && name != NULL) {
+            char* name1 = "/dev/";
+            *name = malloc(strlen(name1) + strlen(buf) + 1);
+            sprintf(*name, "%s%s", name1, buf);
         }
     }
 
-    err = system("mkdir -p /mnt/stg");
-    if(err) {
-        printf("ERROR: failed to mkdir /mnt/stg\n");
-        return err;
-    }
-    printf("mounting /dev/sbd to /mnt/stg\n");
-    err = system("mount /dev/sbd /mnt/stg -o sync");
-    if(err) {
-        printf("ERROR: failed to mount /dev/sbd\n");
-        return err;
-    }
-    err = system("if [[ -v SUDO_USER ]]; then chown $SUDO_USER /mnt/stg; else chown $USER /mnt/stg; fi");
-    if(err) {
-        printf("ERROR: failed to chown /mnt/stg\n");
-        return err;
-    }
-    printf("OK\n");
-    return 0;
+    free(buf);
+    close(fd);
+
+    return err;
 }
 
-int umount(char *folder) {
-    int err;
-    printf("unmounting /dev/sbd\n");
-    err = system("umount /dev/sbd");
+int addDisk(char *folder, char **dev) {
+    return sendIoCtl(IOCTL_DEV_ADD, folder, dev);
+}
+
+int removeDisk(char *folder) {
+    return sendIoCtl(IOCTL_DEV_REMOVE, folder, NULL);
+}
+
+int autoMount(char *folder, char* mountpoint) {
+    int err = 0;
+    char* name = NULL;
+    if(!isCtlLoaded()) {
+        err = loadCtl();
+        if(err) {
+            printf("ERROR: failed to load module\n");
+            return err;
+        }
+    }
+    err = addDisk(folder, &name);
     if(err) {
-        printf("ERROR: failed to umount /dev/sbd\n");
+        printf("ERROR: failed to add disk\n");
         return err;
     }
-    printf("unloading stg_blkdev module\n");
-    err = system("modprobe stg_blkdev -r");
-    if(err) {
-        printf("ERROR: failed to unload stg_blkdev module -r\n");
-        return err;
+    if(name == NULL) {
+        printf("ERROR: failed to get device name\n");
+        err = 1;
+        goto failedToGetName;
     }
+    printf("created %s\n", name);
+    char *isFormatted1 = "blkid -o value -s TYPE ";
+    char *isFormatted3 = " | grep -q ext4";
+    char *isFormattedCmd = malloc(strlen(isFormatted1) + strlen(name) + strlen(isFormatted3) + 1);
+    sprintf(isFormattedCmd, "%s%s%s", isFormatted1, name, isFormatted3);
+    int isFormatted = system(isFormattedCmd) == 0;
+    free(isFormattedCmd);
+    if(!isFormatted) {
+        printf("formatting with ext4\n");
+        char *format1 = "mkfs.ext4 -q -m 0 ";
+        char *formatCmd = malloc(strlen(format1) + strlen(name) + 1);
+        sprintf(formatCmd, "%s%s", format1, name);
+        err = system(formatCmd);
+        free(formatCmd);
+        if(err) {
+            printf("ERROR: failed to mkfs\n");
+            goto failedToFormat;
+        }
+    }
+
+    char *mkdir1 = "mkdir -p ";
+    char *mkdirCmd = malloc(strlen(mkdir1) + strlen(mountpoint) + 1);
+    sprintf(mkdirCmd, "%s%s", mkdir1, mountpoint);
+    err = system(mkdirCmd);
+    free(mkdirCmd);
+    if(err) {
+        printf("ERROR: failed to mkdir\n");
+        goto failedToMkdir;
+    }
+    char* mount1 = "mount -t ext4 -o sync";
+    char* mountCmd = malloc(strlen(mount1) + 1 + strlen(name) + 1 + strlen(mountpoint) + 1);
+    sprintf(mountCmd, "%s %s %s", mount1, name, mountpoint);
+    err = system(mountCmd);
+    free(mountCmd);
+    if(err) {
+        printf("ERROR: failed to mount\n");
+        goto failedToMount;
+    }
+    char* chown1 = "if [[ -v SUDO_USER ]]; then chown $SUDO_USER ";
+    char* chown3 = "; else chown $USER";
+    char* chown5 = "; fi";
+    char* chownCmd = malloc(strlen(chown1) + strlen(mountpoint) + strlen(chown3) + strlen(mountpoint) + strlen(chown5) + 1);
+    sprintf(chownCmd, "%s%s%s%s%s", chown1, mountpoint, chown3, mountpoint, chown5);
+    err = system(chownCmd);
+    free(chownCmd);
+    if(err) {
+        printf("ERROR: failed to chown\n");
+        goto failedToChown;
+    }
+
+    if(name != NULL) free(name);
     printf("OK\n");
     return 0;
+
+failedToGetName:
+failedToFormat:
+failedToMkdir:
+failedToMount:
+failedToChown:
+    if(name != NULL) free(name);
+    if(removeDisk(folder) == 0){ // may fail but that's ok
+        printf("removed disk due to encountered error\n");
+    }
+    return err;
+}
+int autoUmount(char *folder) {
+    int err = 0;
+    char* umountCmd = "umount ";
+    char* umountFull = malloc(strlen(umountCmd) + strlen(folder) + 1);
+    sprintf(umountFull, "%s %s", umountCmd, folder);
+    err = system(umountFull);
+    free(umountFull);
+    if(err) {
+        // printf("ERROR: failed to umount\n");
+        return err;
+    }
+    err = removeDisk(folder);
+    if(err) {
+        return err;
+    } else {
+        printf("OK\n");
+        return 0;
+    }
 }
 
 int main(int argc, char *argv[]) {
     if(argc < 2) return printHelp();
+    int nParams = argc - 2;
 
     char *mode = argv[1];
     char *folder = argv[2];
+    char *mountpoint = argv[3];
 
     if(strcmp(mode, "init") == 0) {
-        if(argc != 3) return printHelp();
+        if(nParams != 1) return printHelp();
         return init(folder);
     } else if(strcmp(mode, "clean") == 0) {
-        if(argc != 3) return printHelp();
+        if(nParams != 1) return printHelp();
         return clean(folder);
     } else if(strcmp(mode, "mount") == 0) {
-        if(argc != 3) return printHelp();
-        return mount(folder);
+        if(nParams != 2) return printHelp();
+        return autoMount(folder, mountpoint);
     } else if(strcmp(mode, "umount") == 0) {
-        if(argc != 2) return printHelp();
-        return umount(folder);
-    } else {
-        printf("ERROR: unknown mode %s\n", mode);
-        printHelp();
+        if(nParams != 1) return printHelp();
+        return autoUmount(folder);
+    } else if(strcmp(mode, "add") == 0) {
+        if(nParams != 1) return printHelp();
+        char* dev;
+        int ret = addDisk(folder, &dev);
+        printf("/dev/%s\n", dev);
+        free(dev);
+        return ret;
+    } else if(strcmp(mode, "remove") == 0) {
+        if(nParams != 1) return printHelp();
+        return removeDisk(folder);
+    } else if(strcmp(mode, "load") == 0) {
+        if(nParams != 0) return printHelp();
+        return loadCtl();
+    } else if(strcmp(mode, "unload") == 0) {
+        if(nParams != 0) return printHelp();
+        return unloadCtl();
     }
+    printf("ERROR: unknown mode\n");
+    printHelp();
     return 0;
 }
