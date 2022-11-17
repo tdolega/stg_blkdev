@@ -2,7 +2,6 @@
 
 int printHelp() {
     printf("Usage: stg_helper [mode] [sourceFolder?] [mountpoint?]\n");
-    printf("\n");
     printf("    typical modes:\n");
     printf("        init - initializes bitmaps from [sourceFolder] with special header to use them as disk\n");
     printf("            stg_helper init ~/myBmps\n");
@@ -12,7 +11,6 @@ int printHelp() {
     printf("            stg_helper mount ~/myBmps /mnt/stg\n");
     printf("        umount - unmount and remove a disk based on [sourceFolder]\n");
     printf("            stg_helper umount ~/myBmps\n");
-    printf("\n");
     printf("    advanced modes:\n");
     printf("        add - add a disk based on [sourceFolder]\n");
     printf("            stg_helper add ~/myBmps\n");
@@ -265,7 +263,7 @@ failedToChown:
     }
     return err;
 }
-int autoUmount(char *folder) {
+int autoUmount(char *folder) { // todo: is broken, cannot umount by backingPath
     int err = 0;
     char* umountCmd = "umount ";
     char* umountFull = malloc(strlen(umountCmd) + strlen(folder) + 1);
@@ -273,7 +271,7 @@ int autoUmount(char *folder) {
     err = system(umountFull);
     free(umountFull);
     if(err) {
-        // printf("ERROR: failed to umount\n");
+        printf("ERROR: failed to umount\n");
         return err;
     }
     err = removeDisk(folder);

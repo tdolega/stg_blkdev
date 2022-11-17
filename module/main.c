@@ -133,7 +133,6 @@ int addDev(char* backingPath, char** name) {
         pprev->pnext = dev;
     }
 
-    kfree(*name);
     return 0;
 
 failedToAdd:
