@@ -17,3 +17,6 @@ clean:
 
 install:
 	cp stg_helper $(INSTALL_PATH)/bin
+
+uninstall:
+	rm $(INSTALL_PATH)/bin/$(BINARY)
