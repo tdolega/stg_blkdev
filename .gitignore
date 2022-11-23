@@ -54,4 +54,4 @@ dkms.conf
 userlandable/cmake-build-debug
 
 helper/.idea
-helper/stg_helper
+*stg_helper

@@ -1,6 +1,8 @@
 BINARY      := stg_helper
 ARCH        := x86
 C_FLAGS     := -Wall -O0 -g
+INSTALL_PATH?=/usr/local
+
 
 FILES := main.c common.c
 
@@ -12,3 +14,6 @@ $(BINARY): $(FILES)
 
 clean:
 	rm -f $(BINARY)
+
+install:
+	cp stg_helper $(INSTALL_PATH)/bin
