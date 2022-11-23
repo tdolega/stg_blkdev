@@ -171,7 +171,20 @@ int sendIoCtl(int command, char *folder, char **name) {
 }
 
 int addDisk(char *folder, char **dev) {
-    return sendIoCtl(IOCTL_DEV_ADD, folder, dev);
+    int err = sendIoCtl(IOCTL_DEV_ADD, folder, dev);
+    if(err) return err;
+
+    char* chown1 = "if [[ -v SUDO_USER ]]; then chown $SUDO_USER ";
+    char* chown3 = "; else chown $USER";
+    char* chown5 = "; fi";
+    char* chownCmd = malloc(strlen(chown1) + strlen(*dev) + strlen(chown3) + strlen(*dev) + strlen(chown5) + 1);
+    sprintf(chownCmd, "%s%s%s%s%s", chown1, *dev, chown3, *dev, chown5);
+    err = system(chownCmd);
+    free(chownCmd);
+    if(err) {
+        printf("ERROR: failed to get ownership of block device\n");
+    }
+    return err;
 }
 
 int removeDisk(char *folder) {
@@ -213,7 +226,7 @@ int autoMount(char *folder, char* mountpoint) {
         err = system(formatCmd);
         free(formatCmd);
         if(err) {
-            printf("ERROR: failed to mkfs\n");
+            printf("ERROR: failed to make filesystem\n");
             goto failedToFormat;
         }
     }
@@ -224,7 +237,7 @@ int autoMount(char *folder, char* mountpoint) {
     err = system(mkdirCmd);
     free(mkdirCmd);
     if(err) {
-        printf("ERROR: failed to mkdir\n");
+        printf("ERROR: failed to create mountpoint\n");
         goto failedToMkdir;
     }
     char* mount1 = "mount -t ext4 -o sync";
@@ -244,7 +257,7 @@ int autoMount(char *folder, char* mountpoint) {
     err = system(chownCmd);
     free(chownCmd);
     if(err) {
-        printf("ERROR: failed to chown\n");
+        printf("ERROR: failed to get ownership of mountpoint\n");
         goto failedToChown;
     }
 
