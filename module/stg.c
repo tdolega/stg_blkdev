@@ -8,9 +8,9 @@ void bWrite(const void *buffer, ulong size, loff_t position, struct Bmp *bmp) {
     kernel_write(bmp->fd, buffer, size, &position);
 }
 
-ulong pixelIdxToBmpIdx(struct Bmp *bmp, ulong pixel) {
-    uint row = pixel / bmp->width;
-    uint col = pixel % bmp->width;
+ulong pixelIdxToBmpIdx(struct Bmp *bmp, ulong pixelIdx) {
+    uint row = pixelIdx / bmp->width;
+    uint col = pixelIdx % bmp->width;
     return (ulong) row * bmp->rowSize + col * COLORS_PER_PIXEL + bmp->headerSize;
 }
 
