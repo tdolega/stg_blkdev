@@ -15,13 +15,13 @@ ulong pixelIdxToBmpIdx(struct Bmp *bmp, ulong pixel) {
 }
 
 void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
+    uint pixel;
     for (ulong byteIdx = 0; byteIdx < size; byteIdx++) {
         uint8 byte = 0;
         ulong pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
+        bRead(&pixel, 4, pixelIdx, bmp);
         for (uint8 colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
-            uint8 color, twoBits;
-            bRead(&color, 1, pixelIdx + colorIdx, bmp);
-            twoBits = color & 0b00000011;
+            uint8 twoBits = (pixel >> (colorIdx * 8)) & 0b00000011;
             byte |= twoBits << (colorIdx * USED_BITS_PER_PIXEL);
         }
         data[byteIdx] = byte;
@@ -29,20 +29,21 @@ void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
 }
 
 void bEncode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
+    uint pixel;
     for (ulong byteIdx = 0; byteIdx < size; byteIdx++) {
         uint8 byte = data[byteIdx];
         ulong pixelIdx = pixelIdxToBmpIdx(bmp, position + byteIdx);
+        bRead(&pixel, 4, pixelIdx, bmp);
+        pixel &= 0xfcfcfcfc;
         for (uint8 colorIdx = 0; colorIdx < COLORS_PER_PIXEL; colorIdx++) {
-            uint8 color, twoBits;
-            bRead(&color, 1, pixelIdx + colorIdx, bmp);
-            twoBits = (byte >> (colorIdx * USED_BITS_PER_PIXEL)) & 0b00000011;
-            color = (color & 0b11111100) | twoBits;
-            bWrite(&color, 1, pixelIdx + colorIdx, bmp);
+            uint8 twoBits = (byte >> (colorIdx * USED_BITS_PER_PIXEL)) & 0b00000011;
+            pixel |= twoBits << (colorIdx * 8);
         }
+        bWrite(&pixel, 4, pixelIdx, bmp);
     }
 }
 
-int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, xncoder_t xncoder) {
+int bsXXcode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, xncoder_t xxcoder) {
     struct Bmp *bmp = bmpS->bmps;
     
     if (position + size > bmpS->totalVirtualSize) {
@@ -57,12 +58,12 @@ int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, x
 
     while (size > 0) {
         ulong posToEnd = bmp->virtualSize - position;
-        ulong bytesToXncode = posToEnd < size ? posToEnd : size;
+        ulong bytesToXXcode = posToEnd < size ? posToEnd : size;
 
-        xncoder(data, bytesToXncode, position, bmp);
+        xxcoder(data, bytesToXXcode, position, bmp);
 
-        data += bytesToXncode;
-        size -= bytesToXncode;
+        data += bytesToXXcode;
+        size -= bytesToXXcode;
         bmp = bmp->pnext;
         position = 0;
     }
@@ -70,11 +71,11 @@ int bsXncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, x
 }
 
 int bsDecode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
-   return bsXncode(data, size, position, bmpS, bDecode);
+   return bsXXcode(data, size, position, bmpS, bDecode);
 }
 
 int bsEncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
-    return bsXncode(data, size, position, bmpS, bEncode);
+    return bsXXcode(data, size, position, bmpS, bEncode);
 }
 
 int isFileBmp(struct Bmp *bmp) {
