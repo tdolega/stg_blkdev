@@ -2,7 +2,7 @@
 
 bool iterate_dir_callback(struct dir_context *ctx, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
     struct callback_context *buf = container_of(ctx, struct callback_context, ctx);
-    return buf->filler(buf->context, name, namlen, offset, ino, d_type);
+    return !buf->filler(buf->context, name, namlen, offset, ino, d_type);
 }
 
 int readdir(const char* path, readdir_t filler, void* context) {
