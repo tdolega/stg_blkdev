@@ -179,14 +179,21 @@ int removeDev(struct SteganographyBlockDevice *dev) {
     return 0;
 }
 
-int findRemoveDev(char* backingPath) {
+int findRemoveDev(char* deviceName) {
     struct SteganographyBlockDevice *pprev = NULL;
     struct SteganographyBlockDevice *dev = ctlDev->pnext; // todo: single line?
+    char letter = 0;
 
     printInfo("!!! remove device\n");
 
+    if(strlen(deviceName) < 4) {
+        printError("invalid device name: %s\n", deviceName);
+        return 1;
+    }
+    letter = deviceName[3];
+
     while(dev != NULL) {
-        if(strcmp(dev->bmpS->backingPath, backingPath) == 0) {
+        if(dev->letter == letter) {
             if(pprev == NULL)
                 ctlDev->pnext = dev->pnext;
             else
@@ -198,7 +205,7 @@ int findRemoveDev(char* backingPath) {
         pprev = dev;
         dev = dev->pnext;
     }
-    printError("device %s not found\n", backingPath);
+    printError("device %s not found\n", deviceName);
     return 1;
 }
 

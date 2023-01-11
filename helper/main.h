@@ -5,6 +5,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <libgen.h>
 
 #include "common.h"
 

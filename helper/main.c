@@ -1,7 +1,7 @@
 #include "main.h"
 
 int printHelp() {
-    printf("Usage: stg_helper [mode] [sourceFolder?] [mountpoint?]\n");
+    printf("Usage: stg_helper [mode] [path] [path]\n");
     printf("    typical modes:\n");
     printf("        init - initializes bitmaps from [sourceFolder] with special header to use them as disk\n");
     printf("            stg_helper init ~/myBmps\n");
@@ -9,13 +9,13 @@ int printHelp() {
     printf("            stg_helper clean ~/myBmps\n");
     printf("        mount - add and mount a [sourceFolder] to [mountpoint]\n");
     printf("            stg_helper mount ~/myBmps /mnt/stg\n");
-    printf("        umount - unmount and remove a disk based on [sourceFolder]\n");
-    printf("            stg_helper umount ~/myBmps\n");
+    printf("        umount - unmount and remove a disk by [devicePath or mountpoint]\n");
+    printf("            stg_helper umount /mnt/stg\n");
     printf("    advanced modes:\n");
     printf("        add - add a disk based on [sourceFolder]\n");
     printf("            stg_helper add ~/myBmps\n");
-    printf("        remove - remove a disk based on [sourceFolder]\n");
-    printf("            stg_helper remove ~/myBmps\n");
+    printf("        remove - remove a disk by [devicePath]\n");
+    printf("            stg_helper remove /mnt/stg\n");
     printf("        load - load driver\n");
     printf("            stg_helper load\n");
     printf("        unload - unload driver\n");
@@ -187,8 +187,9 @@ int addDisk(char *folder, char **dev) {
     return err;
 }
 
-int removeDisk(char *folder) {
-    return sendIoCtl(IOCTL_DEV_REMOVE, folder, NULL);
+int removeDisk(char *deviceFull) {
+    char* deviceName = basename(deviceFull);
+    return sendIoCtl(IOCTL_DEV_REMOVE, deviceName, NULL);
 }
 
 int autoMount(char *folder, char* mountpoint) {
@@ -276,22 +277,53 @@ failedToChown:
     }
     return err;
 }
-int autoUmount(char *folder) { // todo: is broken, cannot umount by backingPath
+int autoUmount(char *folder) {
     int err = 0;
-    char* umountCmd = "umount ";
-    char* umountFull = malloc(strlen(umountCmd) + strlen(folder) + 1);
-    sprintf(umountFull, "%s %s", umountCmd, folder);
+
+    char* findmntCmd = "findmnt -vno SOURCE";
+    char* findmntCmdFull = malloc(strlen(findmntCmd) + 1 + strlen(folder) + 1);
+    sprintf(findmntCmdFull, "%s %s", findmntCmd, folder);
+
+    FILE *fp = NULL;
+    char deviceFull[255] = {0};
+    fp = popen(findmntCmdFull, "r");
+    free(findmntCmdFull);
+    if (fp == NULL) {
+        printf("ERROR: failed to execute findmnt\n");
+        return -1;
+    }
+    if (fgets(deviceFull, sizeof(deviceFull), fp) == NULL) {
+        printf("ERROR: failed to find device, probably wrong path or not mounted\n");
+        pclose(fp);
+        return -1;
+    }
+    pclose(fp);
+
+    int deviceFullLen = strnlen(deviceFull, 255);
+    if(deviceFullLen == 0 || deviceFullLen >= 254) {
+        printf("ERROR: failed to find device\n");
+        return -1;
+    }
+    printf("device: %s", deviceFull);
+
+    char* umountCmd = "umount";
+    char* umountFull = malloc(strlen(umountCmd) + 1 + deviceFullLen + 1);
+    sprintf(umountFull, "%s %s", umountCmd, deviceFull);
     err = system(umountFull);
     free(umountFull);
     if(err) {
         printf("ERROR: failed to umount\n");
         return err;
+    } else {
+        printf("umounted\n");
     }
-    err = removeDisk(folder);
+
+    err = removeDisk(deviceFull);
     if(err) {
+        printf("ERROR: failed to remove disk\n");
         return err;
     } else {
-        printf("OK\n");
+        printf("removed\n");
         return 0;
     }
 }
