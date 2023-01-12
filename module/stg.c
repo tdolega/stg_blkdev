@@ -154,13 +154,13 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
 
     if (!isFileBmp(bmp)) {
         printInfo("file is not a bmp\n");
-        err = -EINVAL;
+        err = 0; // continue
         goto CLOSE_FILE;
     }
 
     if (getBmpColorDepth(bmp) != 32) {
         printError("only 32-bit ARGB bitmaps are supported\n");
-        err = -EINVAL;
+        err = 0; // continue // TODO: you can init 24-bit bmps with helper program
         goto CLOSE_FILE;
     }
 
@@ -172,7 +172,7 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
         if (bmpS->bmps == NULL) {
             printError("you need to initialize this folder with helper program\n");
         }
-        err = -EINVAL;
+        err = 0; // continue
         goto CLOSE_FILE;
     }
 
