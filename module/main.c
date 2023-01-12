@@ -1,5 +1,7 @@
 #include "main.h"
 
+#define DEBUG_GENDISK 0
+
 // controller
 static struct SteganographyControlDevice *ctlDev = NULL;
 
@@ -59,6 +61,7 @@ int addDev(char* backingPath, char** name) {
     sprintf(*name, "%s%c", BLK_DEV_NAME, dev->letter);
 
     // register new block device and get device major number
+    printInfo("registering block device %s\n", *name); // todo: remove
     dev->devMajor = register_blkdev(0, *name);
     if (dev->devMajor < 0) {
         printError("failed to register block device\n");
@@ -67,6 +70,7 @@ int addDev(char* backingPath, char** name) {
     }
 
     // allocate queue
+    printInfo("allocating queue\n"); // todo: remove
     if (blk_mq_alloc_sq_tag_set(&dev->tag_set, &mqOps, 128, BLK_MQ_F_SHOULD_MERGE)) {
         printError("failed to allocate device queue\n");
         err = -ENOMEM;
@@ -137,21 +141,31 @@ int addDev(char* backingPath, char** name) {
 
 failedToAdd:
 failedCapacity:
+    if (DEBUG_GENDISK) printInfo("1");
     closeBmps(dev->bmpS); // undo openBmps
 failedOpenBmps:
+    if (DEBUG_GENDISK) printInfo("2");
     kfree(dev->bmpS); // undo kmalloc bmpS
 failedAllocBmpS:
+    if (DEBUG_GENDISK) printInfo("3");
+    del_gendisk(dev->gdisk); // somehow avoid unexpected crashing with next disk
+    if (DEBUG_GENDISK) printInfo("4");
     put_disk(dev->gdisk); // undo blk_mq_alloc_disk
 failedAllocGdisk:
-    blk_mq_free_tag_set(&dev->tag_set); // undo blk_mq_alloc_sq_tag_set
+    if (DEBUG_GENDISK) printInfo("5");
+    // blk_mq_free_tag_set(&dev->tag_set); // undo blk_mq_alloc_sq_tag_set
 failedAllocQueue:
+    if (DEBUG_GENDISK) printInfo("6");
     unregister_blkdev(dev->devMajor, *name); // undo register_blkdev
 failedRegisterBlkDev:
+    if (DEBUG_GENDISK) printInfo("7");
     kfree(dev); // undo kmalloc dev
+    if (DEBUG_GENDISK) printInfo("8");
     kfree(*name); // undo kmalloc name
 failedAllocName:
 failedAllocLetter:
 failedAllocdev:
+    if (DEBUG_GENDISK) printInfo("9");
     kfree(backingPath); // undo kmalloc backingPath in parent function
 noBackingPath:
     printError("addDev() failed with error %d", err);
@@ -163,18 +177,37 @@ int removeDev(struct SteganographyBlockDevice *dev) {
 
     printInfo("removing disk /dev/%s\n", dev->gdisk->disk_name);
 
+    if(dev->bmpS->backingPath) {
+        if (DEBUG_GENDISK) printInfo("1");
+        kfree(dev->bmpS->backingPath);
+    }
     if(dev->bmpS) {
+        if (DEBUG_GENDISK) printInfo("2");
         closeBmps(dev->bmpS);
+        if (DEBUG_GENDISK) printInfo("3");
         kfree(dev->bmpS);
     }
     if(dev->gdisk) {
+        if (DEBUG_GENDISK) printInfo("4");
         del_gendisk(dev->gdisk);
-        put_disk(dev->gdisk);
     } else {
+        printError("dev->gdisk is NULL #1\n");
+    }
+    if (DEBUG_GENDISK) printInfo("5");
+    blk_mq_free_tag_set(&dev->tag_set);
+    if(dev->gdisk) {
+        if (DEBUG_GENDISK) printInfo("6");
+        unregister_blkdev(dev->devMajor, dev->gdisk->disk_name);
+    } else { 
         printError("dev->gdisk is NULL\n");
     }
-    kfree(dev->bmpS->backingPath);
-    unregister_blkdev(dev->devMajor, dev->gdisk->disk_name); // todo: maybe do it first to prevent new requests?
+    if(dev->gdisk) {
+        if (DEBUG_GENDISK) printInfo("7");
+        put_disk(dev->gdisk);
+    } else {
+        printError("dev->gdisk is NULL #2\n");
+    }
+    if (DEBUG_GENDISK) printInfo("8");
     kfree(dev);
     return 0;
 }

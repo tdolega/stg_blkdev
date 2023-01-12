@@ -271,10 +271,10 @@ failedToFormat:
 failedToMkdir:
 failedToMount:
 failedToChown:
-    if(name != NULL) free(name);
-    if(removeDisk(folder) == 0){ // may fail but that's ok
+    if(removeDisk(name) == 0){ // may fail but that's ok
         printf("removed disk due to encountered error\n");
     }
+    if(name != NULL) free(name);
     return err;
 }
 int autoUmount(char *folder) {
@@ -299,12 +299,13 @@ int autoUmount(char *folder) {
     }
     pclose(fp);
 
+    // warning: there is a newline at the end of the string deviceFull
     int deviceFullLen = strnlen(deviceFull, 255);
     if(deviceFullLen == 0 || deviceFullLen >= 254) {
         printf("ERROR: failed to find device\n");
         return -1;
     }
-    printf("device: %s", deviceFull);
+    printf("device: %s\n", deviceFull);
 
     char* umountCmd = "umount";
     char* umountFull = malloc(strlen(umountCmd) + 1 + deviceFullLen + 1);
