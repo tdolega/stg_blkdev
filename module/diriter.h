@@ -1,4 +1,5 @@
 #include <linux/fs.h>
+#include <linux/version.h>
 
 typedef int (*readdir_t)(void *, const char *, int, loff_t, u64, uint);
 

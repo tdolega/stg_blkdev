@@ -1,9 +1,21 @@
 #include "diriter.h"
 
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,0)
+
 bool iterate_dir_callback(struct dir_context *ctx, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
     struct callback_context *buf = container_of(ctx, struct callback_context, ctx);
     return !buf->filler(buf->context, name, namlen, offset, ino, d_type);
 }
+
+#else
+
+int iterate_dir_callback(struct dir_context *ctx, const char *name, int namlen, loff_t offset, u64 ino, uint d_type) {
+    struct callback_context *buf = container_of(ctx, struct callback_context, ctx);
+    return buf->filler(buf->context, name, namlen, offset, ino, d_type);
+}
+
+#endif
 
 int readdir(const char* path, readdir_t filler, void* context) {
     int err;
