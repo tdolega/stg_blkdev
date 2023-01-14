@@ -1,6 +1,6 @@
 BINARY      := stg_helper
 ARCH        := x86
-C_FLAGS     := -Wall -O0 -g
+C_FLAGS     := -Wall -O2 -g
 INSTALL_PATH?=/usr/local
 
 
