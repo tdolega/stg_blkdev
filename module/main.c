@@ -36,15 +36,16 @@ int addDev(char* backingPath, char** name) {
         goto noBackingPath;
     }
 
-    dev = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
+    dev = kzalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
     if (dev == NULL) {
         printError("failed to allocate dev struct\n");
         err = -ENOMEM;
         goto failedAllocDev;
     }
+    dev->pnext = NULL;
 
     // open backing files
-    dev->bmpS = kmalloc(sizeof(struct BmpStorage), GFP_KERNEL);
+    dev->bmpS = kzalloc(sizeof(struct BmpStorage), GFP_KERNEL);
     if (dev->bmpS == NULL) {
         printError("failed to allocate dev->bmpS struct\n");
         err = -ENOMEM;
@@ -74,7 +75,7 @@ int addDev(char* backingPath, char** name) {
         goto failedAllocLetter;
     }
 
-    *name = kmalloc(sizeof (char) * strlen(BLK_DEV_NAME) + 1 + 1, GFP_KERNEL);
+    *name = kzalloc(sizeof (char) * strlen(BLK_DEV_NAME) + 1 + 1, GFP_KERNEL);
     if (*name == NULL) {
         printError("failed to allocate memory for name\n");
         err = -ENOMEM;
@@ -185,7 +186,6 @@ noBackingPath:
 }
 
 int removeDev(struct SteganographyBlockDevice *dev) {
-    // todo: cleanup queue?
     printInfo("removing disk /dev/%s\n", dev->gdisk->disk_name);
 
     if(dev->gdisk) {
@@ -233,12 +233,12 @@ int removeDev(struct SteganographyBlockDevice *dev) {
 
 int findRemoveDev(char* deviceName) {
     struct SteganographyBlockDevice *pprev = NULL;
-    struct SteganographyBlockDevice *dev = ctlDev->pnext; // todo: single line?
+    struct SteganographyBlockDevice *dev = ctlDev->pnext;
     char letter = 0;
 
     printInfo("!!! remove device\n");
 
-    if(strlen(deviceName) != 4) {
+    if(strlen(deviceName) != 4 || deviceName[0] != 's' || deviceName[1] != 't' || deviceName[2] != 'g') {
         printError("invalid device name: %s\n", deviceName);
         return 1;
     }
@@ -277,7 +277,7 @@ int devIoCtl(struct block_device *bd, fmode_t mode, uint cmd, ulong arg) {
     char* backingPath;
 
     if(strcmp(bd->bd_disk->disk_name, CTL_DEV_NAME) != 0) {
-        printError("ioctl only supported for control device\n");
+        printError("%s: ioctl request not supported\n", bd->bd_disk->disk_name);
         return -EINVAL;
     }
 
@@ -286,7 +286,7 @@ int devIoCtl(struct block_device *bd, fmode_t mode, uint cmd, ulong arg) {
         return -EINVAL;
     }
 
-    backingPath = kmalloc(MAX_BACKING_LEN, GFP_KERNEL);
+    backingPath = kzalloc(MAX_BACKING_LEN, GFP_KERNEL);
     if(backingPath == NULL) {
         printError("failed to allocate memory for backingPath\n");
         return -ENOMEM;
@@ -386,7 +386,7 @@ static void requestHandlerThread(struct work_struct *work_arg){
 
 static blk_status_t queueRq(struct blk_mq_hw_ctx *hctx, const struct blk_mq_queue_data* bd) {
     struct request *rq = bd->rq;
-    struct SbdWorker *worker = kmalloc(sizeof(struct SbdWorker), GFP_KERNEL);
+    struct SbdWorker *worker = kmalloc(sizeof(struct SbdWorker), GFP_KERNEL); // todo: use kzalloz if encounter problems
     if (worker == NULL) {
         printError("failed to allocate worker struct");
         return -ENOMEM;
@@ -415,12 +415,13 @@ static int __init moduleInit(void) {
     int err = 0;
     printInfo("!!! module initialize\n");
 
-    ctlDev = kmalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
+    ctlDev = kzalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
     if (ctlDev == NULL) {
         printError("failed to allocate dev struct\n");
         err = -ENOMEM;
         goto failedAllocdev;
     }
+    ctlDev->pnext = NULL;
 
     // register new block device and get device major number
     ctlDev->devMajor = register_blkdev(0, CTL_DEV_NAME);
@@ -470,7 +471,7 @@ static int __init moduleInit(void) {
         goto failedToAdd;
     }
 
-    ctlDev->pnext = NULL;
+    printInfo("added control device");
 
     return 0;
 
@@ -491,18 +492,23 @@ failedAllocdev:
 static void __exit moduleExit(void) {
     struct SteganographyBlockDevice *dev = ctlDev->pnext;
     printInfo("!!! module exit\n");
-    while(dev) {
+    printInfo("removing all devices");
+    while(dev != NULL) {
         struct SteganographyBlockDevice *next = dev->pnext;
         removeDev(dev);
         dev = next;
     }
     
-    // todo: cleanup queue?
-    // closeBmps(ctlDev->bmpS);
-    // kfree(ctlDev->bmpS);
+    printInfo("removing control device");
+    printDebug("del_gendisk");
     del_gendisk(ctlDev->gdisk);
+    printDebug("blk_mq_free_tag_set");
+    blk_mq_free_tag_set(&ctlDev->tag_set);
+    printDebug("unregister_blkdev");
+    unregister_blkdev(ctlDev->devMajor, CTL_DEV_NAME);
+    printDebug("put_disk");
     put_disk(ctlDev->gdisk);
-    unregister_blkdev(ctlDev->devMajor, CTL_DEV_NAME); // todo: maybe do it first to prevent new requests?
+    printDebug("kfree ctlDev");
     kfree(ctlDev);
 }
 

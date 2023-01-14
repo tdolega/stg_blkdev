@@ -43,7 +43,7 @@ void bEncode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
     }
 }
 
-int bsXXcode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, xncoder_t xxcoder) {
+int bsXXcode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, xxcoder_t xxcoder) {
     struct Bmp *bmp = bmpS->bmps;
     
     if (position + size > bmpS->totalVirtualSize) {
@@ -126,14 +126,14 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     if (d_type != DT_REG) return 0;
 
     printInfo("===> %.*s\n", namlen, name);
-    bmp = kmalloc(sizeof(struct Bmp), GFP_KERNEL);
+    bmp = kzalloc(sizeof(struct Bmp), GFP_KERNEL);
     if (bmp == NULL) {
         printError("failed to allocate bmp struct\n");
         return -ENOMEM;
     }
     bmp->pnext = NULL;
 
-    fullPath = kmalloc(strlen(bmpS->backingPath) + 1 + namlen + 1, GFP_KERNEL);
+    fullPath = kzalloc(strlen(bmpS->backingPath) + 1 + namlen + 1, GFP_KERNEL);
     if (fullPath == NULL) {
         printError("failed to allocate fullPath string\n");
         err = -ENOMEM;
@@ -223,6 +223,8 @@ int openBmps(struct BmpStorage *bmpS) {
     struct Bmp *bmp;
     
     bmpS->totalVirtualSize = 0;
+    bmpS->bmps = NULL;
+    bmpS->count = 0;
     if (( err = readdir(bmpS->backingPath, handleFile, (void*)bmpS) )) {
         printError("failed to read directory %s\n", bmpS->backingPath);
         closeBmps(bmpS);
