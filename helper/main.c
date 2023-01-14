@@ -32,6 +32,13 @@ int isBmpFile(FILE *file, uint fileSize) {
     return buf[0] == 'B' && buf[1] == 'M';
 }
 
+int getBmpColorDepth(FILE *file) {
+    uint8 buf[2];
+    fseek(file, 28, SEEK_SET);
+    fread(buf, 1, 2, file);
+    return buf[0] + buf[1] * 256;
+}
+
 struct OpenBmp {
     FILE *file;
     uint16 idx;
@@ -64,7 +71,12 @@ uint16 openBmps(char *folder, struct OpenBmp **openBmpsRef) {
         uint fileSize = ftell(file);
         if (!isBmpFile(file, fileSize)) {
             fclose(file);
-            printf("%s is not a bitmap file\n", entry->d_name);
+            printf("%s is not a bitmap file, skipping...\n", entry->d_name);
+            continue;
+        }
+        if (getBmpColorDepth(file) != 32) {
+            fclose(file);
+            printf("%s is not a 32-bit bitmap file, skipping...\n", entry->d_name);
             continue;
         }
         if(*openBmpsRef == NULL) {
