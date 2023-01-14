@@ -25,8 +25,7 @@ char getNextAvailableLetter(void) {
 
 int addDev(char* backingPath, char** name) {
     int err = 0;
-    struct SteganographyBlockDevice *dev = NULL;
-    struct SteganographyBlockDevice *pprev = NULL;
+    struct SteganographyBlockDevice *dev = ctlDev->pnext;
     
     printInfo("!!! add device\n");
 
@@ -34,6 +33,15 @@ int addDev(char* backingPath, char** name) {
         printError("backingPath not provided\n");
         err = -ENOENT;
         goto noBackingPath;
+    }
+
+    while(dev != NULL) {
+        if (strcmp(dev->bmpS->backingPath, backingPath) == 0) {
+            printError("device with backingPath %s already exists\n", backingPath);
+            err = -EEXIST;
+            goto backingPathExists;
+        }
+        dev = dev->pnext;
     }
 
     dev = kzalloc(sizeof (struct SteganographyBlockDevice), GFP_KERNEL);
@@ -135,7 +143,7 @@ int addDev(char* backingPath, char** name) {
     if(ctlDev->pnext == NULL) {
         ctlDev->pnext = dev;
     } else {
-        pprev = ctlDev->pnext;
+        struct SteganographyBlockDevice *pprev = ctlDev->pnext;
         while(pprev->pnext != NULL) {
             pprev = pprev->pnext;
         }
@@ -180,6 +188,7 @@ failedAllocDev:
     printDebug("kfree backingPath");
     kfree(backingPath); // undo kmalloc backingPath in parent function
 
+backingPathExists:
 noBackingPath:
     printError("device will not be created (error %d)", err);
     return err;
