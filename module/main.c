@@ -66,7 +66,7 @@ int addDev(char* backingPath, char** name) {
         err = -EINVAL;
         goto failedCapacity;
     }
-    printInfo("sector size: %d B * capacity: %llu sectors = %llu B \n", SECTOR_SIZE, dev->capacity, dev->capacity * SECTOR_SIZE);
+    printInfo("sector size: %d B * capacity: %llu sectors = available: %llu B \n", SECTOR_SIZE, dev->capacity, dev->capacity * SECTOR_SIZE);
 
     dev->letter = getNextAvailableLetter();
     if (dev->letter == 0) {
@@ -181,7 +181,7 @@ failedAllocDev:
     kfree(backingPath); // undo kmalloc backingPath in parent function
 
 noBackingPath:
-    printError("addDev() failed with error %d", err);
+    printError("device will not be created (error %d)", err);
     return err;
 }
 

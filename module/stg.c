@@ -96,13 +96,13 @@ void fillBmpStruct(struct Bmp *bmp) {
     // dimensions
     bRead((uint8 *) &bmp->width, 4, 18, bmp);
     bRead((uint8 *) &bmp->height, 4, 22, bmp);
-    printInfo("width: %d, height: %d\n", bmp->width, bmp->height);
+    // printInfo("width: %d, height: %d\n", bmp->width, bmp->height);
 
     // row size
     bmp->rowSize = bmp->width * COLORS_PER_PIXEL;
     bmp->padding = (4 - (bmp->rowSize % 4)) % 4;
     bmp->rowSize += bmp->padding;
-    printInfo("row size: %d B, row padding: %d B\n", bmp->rowSize, bmp->padding);
+    // printInfo("row size: %d B, row padding: %d B\n", bmp->rowSize, bmp->padding);
 
     // capacity
     bmp->virtualSize = bmp->width * bmp->height * COLORS_PER_PIXEL * USED_BITS_PER_PIXEL / 8;
@@ -110,7 +110,7 @@ void fillBmpStruct(struct Bmp *bmp) {
 
     // header size
     bRead((uint8 *) &bmp->headerSize, 4, 10, bmp);
-    printInfo("header size: %d B\n", bmp->headerSize);
+    // printInfo("header size: %d B\n", bmp->headerSize);
 
     // idx of the file
     bRead((uint8 *) &bmp->idx, 2, BMP_IDX_OFFSET, bmp);
@@ -153,20 +153,19 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
     printInfo("file size: %ld.%.2ld MiB\n", bmp->size / 1024 / 1024, (100 * bmp->size / 1024 / 1024) % 100);
 
     if (!isFileBmp(bmp)) {
-        printInfo("file is not a bmp\n");
-        err = 0; // continue
-        goto CLOSE_FILE;
+        printInfo("not a bmp, this file will be skipped\n");
+        goto CLOSE_FILE; // continue
     }
 
     if (getBmpColorDepth(bmp) != 32) {
-        printError("only 32-bit ARGB bitmaps are supported\n");
-        err = 0; // continue // TODO: you can init 24-bit bmps with helper program
-        goto CLOSE_FILE;
+        printInfo("only 32-bit ARGB bitmaps are supported, this file will be skipped\n");
+        goto CLOSE_FILE; // continue
     }
 
     fillBmpStruct(bmp);
     
     bRead((uint8 *) &bmpsCountReported, 2, BMP_COUNT_OFFSET, bmp);
+    printInfo("fileno: %d / %d\n", bmp->idx + 1, bmpsCountReported);
     if (bmpsCountReported == 0) {
         printError("file is not a part of a bmp storage\n");
         if (bmpS->bmps == NULL) {
@@ -212,8 +211,10 @@ int handleFile(void* data, const char *name, int namlen, loff_t offset, u64 ino,
 
 CLOSE_FILE:
     filp_close(bmp->fd, NULL);
+    bmp->fd = NULL;
 FREE_BMP:
     kfree(bmp);
+    if (err) bmpS->totalVirtualSize = bmpS->count = 0;
     return err;
 }
 
@@ -222,15 +223,20 @@ int openBmps(struct BmpStorage *bmpS) {
     uint idx = 0;
     struct Bmp *bmp;
     
-    bmpS->totalVirtualSize = 0;
+    bmpS->totalVirtualSize = bmpS->count = 0;
     bmpS->bmps = NULL;
-    bmpS->count = 0;
     if (( err = readdir(bmpS->backingPath, handleFile, (void*)bmpS) )) {
         printError("failed to read directory %s\n", bmpS->backingPath);
         closeBmps(bmpS);
         return err;
     }
     printInfo("===<\n");
+
+    if (bmpS->count == bmpS->totalVirtualSize) {
+        printError("disk will not be created\n");
+        closeBmps(bmpS);
+        return -EINVAL;
+    }
 
     bmp = bmpS->bmps;
     while(bmp != NULL) {
