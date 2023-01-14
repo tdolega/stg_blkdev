@@ -219,16 +219,19 @@ int autoMount(char *folder, char* mountpoint) {
     sprintf(isFormattedCmd, "%s%s%s", isFormatted1, name, isFormatted3);
     int isFormatted = system(isFormattedCmd) == 0;
     free(isFormattedCmd);
-    if(!isFormatted) {
-        printf("formatting with ext4\n");
-        char *format1 = "mkfs.ext4 -q -m 0 ";
-        char *formatCmd = malloc(strlen(format1) + strlen(name) + 1);
-        sprintf(formatCmd, "%s%s", format1, name);
+    if(isFormatted) {
+        printf("mounting existing ext4 partition\n");
+    } else {
+        char *format1 = "mkfs.ext4 -q -m 0 -F ";
+        char *formatCmd = malloc(strlen(format1) + strlen(name) + strlen(REDIRECT_STDOUT) + 1);
+        sprintf(formatCmd, "%s%s%s", format1, name, REDIRECT_STDOUT);
         err = system(formatCmd);
         free(formatCmd);
         if(err) {
             printf("ERROR: failed to make filesystem\n");
             goto failedToFormat;
+        } else {
+            printf("formatted with ext4\n");
         }
     }
 
@@ -299,13 +302,16 @@ int autoUmount(char *folder) {
     }
     pclose(fp);
 
+    // remove newline if exists
+    deviceFull[strcspn(deviceFull, "\n")] = 0;
+
     // warning: there is a newline at the end of the string deviceFull
     int deviceFullLen = strnlen(deviceFull, 255);
     if(deviceFullLen == 0 || deviceFullLen >= 254) {
         printf("ERROR: failed to find device\n");
         return -1;
     }
-    printf("device: %s\n", deviceFull);
+    printf("removing %s\n", deviceFull);
 
     char* umountCmd = "umount";
     char* umountFull = malloc(strlen(umountCmd) + 1 + deviceFullLen + 1);

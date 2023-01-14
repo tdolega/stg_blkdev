@@ -11,8 +11,9 @@
 
 //// macros
 
-#define printInfo(...)  printk(KERN_INFO "stg_blkdev: " __VA_ARGS__)
-#define printError(...) printk(KERN_ERR  "stg_blkdev: " __VA_ARGS__)
+#define printInfo(...)  printk(KERN_INFO  "stg_blkdev: " __VA_ARGS__)
+#define printError(...) printk(KERN_ERR   "stg_blkdev: " __VA_ARGS__)
+#define printDebug(...) printk(KERN_DEBUG "stg_blkdev: " __VA_ARGS__)
 
 //// block device
 
