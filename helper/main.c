@@ -371,7 +371,7 @@ int main(int argc, char *argv[]) {
         if(nParams != 1) return printHelp();
         char* dev;
         int ret = addDisk(folder, &dev);
-        printf("/dev/%s\n", dev);
+        printf("%s\n", dev);
         free(dev);
         return ret;
     } else if(strcmp(mode, "remove") == 0) {

@@ -1,9 +1,9 @@
 #include <linux/fs.h>
 #include <linux/blk-mq.h>
-// #include <linux/vmalloc.h>
 
 //// types
 
+// TODO: fix all of those to proper u16, u32, etc.
 #define uint unsigned int
 #define uint8 unsigned char
 #define uint16 unsigned short
@@ -27,6 +27,9 @@
 #define IOCTL_DEV_ADD 55001
 #define IOCTL_DEV_REMOVE 55002
 #define MAX_BACKING_LEN 1024
+
+#define RW_BUF_SIZE PAGE_SIZE
+#define RW_BUF_PIXELS (PAGE_SIZE / COLORS_PER_PIXEL)
 
 struct SteganographyBlockDevice {
     int devMajor;

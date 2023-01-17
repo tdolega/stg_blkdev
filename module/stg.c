@@ -28,6 +28,34 @@ void bDecode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
     }
 }
 
+void bDecodeFast(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
+    ulong pixelIdx = pixelIdxToBmpIdx(bmp, position);
+    ulong bufSize = min(RW_BUF_SIZE, size * sizeof(u32));
+    u32 *rbuf = kmalloc(bufSize, GFP_KERNEL);
+    if(rbuf == NULL) {
+        printDebug("bDecodeFast: vmalloc failed");
+        bDecode(data, size, position, bmp);
+        return;
+    }
+    for (ulong byteIdx = 0; byteIdx < size; byteIdx += RW_BUF_PIXELS) {
+        ulong pixelsRead = min(RW_BUF_PIXELS, size - byteIdx);
+        bRead(rbuf, pixelsRead * sizeof(u32), pixelIdx, bmp);
+        for (ulong i = 0; i < pixelsRead; i++) {
+            uint8 byte = 0;
+            u32 pixel = rbuf[i];
+        
+            byte = pixel & 0b00000011;
+            byte |= ((pixel >> 8) & 0b00000011) << 2;
+            byte |= ((pixel >> 16) & 0b00000011) << 4;
+            byte |= ((pixel >> 24) & 0b00000011) << 6;        
+
+            data[byteIdx + i] = byte;
+        }
+        pixelIdx += RW_BUF_SIZE;
+    }
+    kfree(rbuf);
+}
+
 void bEncode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
     uint pixel;
     for (ulong byteIdx = 0; byteIdx < size; byteIdx++) {
@@ -41,6 +69,36 @@ void bEncode(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
         }
         bWrite(&pixel, 4, pixelIdx, bmp);
     }
+}
+
+void bEncodeFast(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
+    ulong pixelIdx = pixelIdxToBmpIdx(bmp, position);
+    ulong bufSize = min(RW_BUF_SIZE, size * sizeof(u32));
+    u32 *wbuf = kmalloc(bufSize, GFP_KERNEL);
+    if(wbuf == NULL) {
+        printDebug("bEncodeFast: vmalloc failed");
+        bEncode(data, size, position, bmp);
+        return;
+    }
+    for (ulong byteIdx = 0; byteIdx < size; byteIdx += RW_BUF_PIXELS) {
+        ulong pixelsRead = min(RW_BUF_PIXELS, size - byteIdx);
+        bRead(wbuf, pixelsRead * sizeof(u32), pixelIdx, bmp);
+        for (ulong i = 0; i < pixelsRead; i++) {
+            uint8 byte = data[byteIdx + i];
+            u32 pixel = wbuf[i];
+            
+            pixel &= 0xfcfcfcfc;
+            pixel |= byte & 0b00000011;
+            pixel |= ((byte >> 2) & 0b00000011) << 8;
+            pixel |= ((byte >> 4) & 0b00000011) << 16;
+            pixel |= ((byte >> 6) & 0b00000011) << 24;
+
+            wbuf[i] = pixel;
+        }
+        bWrite(wbuf, pixelsRead * sizeof(u32), pixelIdx, bmp);
+        pixelIdx += RW_BUF_SIZE;
+    }
+    kfree(wbuf);
 }
 
 int bsXXcode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, xxcoder_t xxcoder) {
@@ -71,11 +129,11 @@ int bsXXcode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, x
 }
 
 int bsDecode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
-   return bsXXcode(data, size, position, bmpS, bDecode);
+   return bsXXcode(data, size, position, bmpS, bDecodeFast);
 }
 
 int bsEncode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS) {
-    return bsXXcode(data, size, position, bmpS, bEncode);
+    return bsXXcode(data, size, position, bmpS, bEncodeFast);
 }
 
 int isFileBmp(struct Bmp *bmp) {
