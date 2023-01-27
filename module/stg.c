@@ -33,7 +33,7 @@ void bDecodeFast(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
     ulong bufSize = min(RW_BUF_SIZE, size * sizeof(u32));
     u32 *rbuf = kmalloc(bufSize, GFP_KERNEL);
     if(rbuf == NULL) {
-        printDebug("bDecodeFast: vmalloc failed");
+        printDebug("bDecodeFast: can't allocate memory, using slow version");
         bDecode(data, size, position, bmp);
         return;
     }
@@ -76,7 +76,7 @@ void bEncodeFast(uint8 *data, ulong size, loff_t position, struct Bmp *bmp) {
     ulong bufSize = min(RW_BUF_SIZE, size * sizeof(u32));
     u32 *wbuf = kmalloc(bufSize, GFP_KERNEL);
     if(wbuf == NULL) {
-        printDebug("bEncodeFast: vmalloc failed");
+        printDebug("bEncodeFast: can't allocate memory, using slow version");
         bEncode(data, size, position, bmp);
         return;
     }
@@ -116,7 +116,7 @@ int bsXXcode(void *data, ulong size, loff_t position, struct BmpStorage *bmpS, x
 
     while (size > 0) {
         ulong posToEnd = bmp->virtualSize - position;
-        ulong bytesToXXcode = posToEnd < size ? posToEnd : size;
+        ulong bytesToXXcode = min(posToEnd, size);
 
         xxcoder(data, bytesToXXcode, position, bmp);
 
